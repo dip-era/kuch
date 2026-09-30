@@ -17,14 +17,15 @@ const VIEWERS = [
   { id: 'drivability', title: 'Drivability Map', note: 'Exact cells classified by vehicle profile' },
 ]
 
+const DEFAULT_ZOOM = 2.7
 const number = value => Number(value ?? 0).toLocaleString()
 const ms = value => value == null ? 'Not recorded' : `${value.toFixed(1)} ms`
 
 function initialWindowState() {
   return {
-    raw: { frameIndex: 0, playing: false, speed: 1, topDown: false, zoom: 1, reset: 0, selected: null },
-    semantic: { frameIndex: 0, playing: false, speed: 1, topDown: false, zoom: 1, reset: 0, selected: null },
-    drivability: { frameIndex: 0, playing: false, speed: 1, topDown: true, zoom: 1, reset: 0, selected: null },
+    raw: { frameIndex: 0, playing: false, speed: 1, topDown: false, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
+    semantic: { frameIndex: 0, playing: false, speed: 1, topDown: false, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
+    drivability: { frameIndex: 0, playing: false, speed: 1, topDown: true, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
   }
 }
 
@@ -315,7 +316,7 @@ export default function App() {
             drivabilityOptions={drivabilityOptions} state={windowState[viewer.id]}
             setTopDown={value => updateViewerState(viewer.id, { topDown: value, selected: null })}
             setZoom={value => updateViewerState(viewer.id, { zoom: value })}
-            resetView={() => updateViewerState(viewer.id, previous => ({ ...previous, zoom: 1, reset: previous.reset + 1, selected: null }))}
+            resetView={() => updateViewerState(viewer.id, previous => ({ ...previous, zoom: DEFAULT_ZOOM, reset: previous.reset + 1, selected: null }))}
             setSelected={value => updateViewerState(viewer.id, { selected: value })}
             step={delta => updateViewerState(viewer.id, previous => ({
               ...previous, playing: false, frameIndex: frameCount ? (previous.frameIndex + delta + frameCount) % frameCount : 0,
