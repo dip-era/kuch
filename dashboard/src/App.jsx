@@ -18,7 +18,9 @@ const VIEWERS = [
 ]
 
 const DEFAULT_ZOOM = 2.7
-const PLAYBACK_FRAME_MS = 100
+const PLAYBACK_FRAME_MS = 80
+const PREFETCH_AHEAD = 6
+const PREFETCH_BEHIND = 2
 const number = value => Number(value ?? 0).toLocaleString()
 const ms = value => value == null ? 'Not recorded' : `${value.toFixed(1)} ms`
 
@@ -69,6 +71,7 @@ function PlaybackStrip({ disabled, frameIndex, frameCount, playing, speed, onSte
       <option value={2}>2×</option>
       <option value={4}>4×</option>
       <option value={6}>6×</option>
+      <option value={8}>8×</option>
     </select>
   </div>
 }
@@ -205,6 +208,7 @@ export default function App() {
   const [pointSize, setPointSize] = useState(1.8)
   const [drivabilityOptions, setDrivabilityOptions] = useState(() => ({ ...DEFAULT_DRIVABILITY }))
   const [showEgo, setShowEgo] = useState(true)
+  const playbackClock = useRef({ last: 0, carry: { raw: 0, semantic: 0, drivability: 0 } })
 
   useEffect(() => {
     let active = true
@@ -241,23 +245,55 @@ export default function App() {
 
   useEffect(() => {
     if (!dataset || uploaded) return
+    playbackClock.current.last = 0
+    playbackClock.current.carry = { raw: 0, semantic: 0, drivability: 0 }
+    let rafId = 0
     const frameCount = dataset.frameIds.length
-    const timers = VIEWERS.flatMap(({ id }) => {
-      if (!windowState[id].playing || loadingByViewer[id]) return []
-      return [setTimeout(() => {
-        setWindowState(previous => ({
-          ...previous,
-          [id]: { ...previous[id], frameIndex: (previous[id].frameIndex + 1) % frameCount },
-        }))
-      }, PLAYBACK_FRAME_MS / windowState[id].speed)]
-    })
-    return () => timers.forEach(clearTimeout)
+    const tick = now => {
+      const clock = playbackClock.current
+      const delta = clock.last ? now - clock.last : 0
+      clock.last = now
+      setWindowState(previous => {
+        let changed = false
+        const next = { ...previous }
+        for (const { id } of VIEWERS) {
+          if (!previous[id].playing || loadingByViewer[id]) {
+            clock.carry[id] = 0
+            continue
+          }
+          const period = PLAYBACK_FRAME_MS / previous[id].speed
+          clock.carry[id] += delta
+          const advance = Math.floor(clock.carry[id] / period)
+          if (!advance) continue
+          clock.carry[id] -= advance * period
+          next[id] = { ...previous[id], frameIndex: (previous[id].frameIndex + advance) % frameCount }
+          changed = true
+        }
+        return changed ? next : previous
+      })
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
   }, [
     dataset, uploaded, loadingByViewer.raw, loadingByViewer.semantic, loadingByViewer.drivability,
     windowState.raw.playing, windowState.raw.speed, windowState.raw.frameIndex,
     windowState.semantic.playing, windowState.semantic.speed, windowState.semantic.frameIndex,
     windowState.drivability.playing, windowState.drivability.speed, windowState.drivability.frameIndex,
   ])
+
+  useEffect(() => {
+    if (!dataset || uploaded) return
+    const count = dataset.frameIds.length
+    for (const { id } of VIEWERS) {
+      const center = windowState[id].frameIndex
+      for (let offset = -PREFETCH_BEHIND; offset <= PREFETCH_AHEAD; offset += 1) {
+        if (!offset) continue
+        const nextIndex = (center + offset + count) % count
+        dataset.loadFrame(dataset.frameIds[nextIndex]).catch(() => {})
+      }
+    }
+  }, [dataset, uploaded, windowState.raw.frameIndex, windowState.semantic.frameIndex, windowState.drivability.frameIndex])
 
   const updateViewerState = (id, update) => setWindowState(previous => ({
     ...previous,
