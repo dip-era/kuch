@@ -1,4 +1,4 @@
-# LiDAR-X Frontend
+# PointMatrix Frontend
 
 React, Three.js, and Canvas views for recorded and uploaded LiDAR scans.
 

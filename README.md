@@ -1,4 +1,4 @@
-# LiDAR-X
+# PointMatrix
 
 Nine synchronized LiDAR views of a semantic 2.5D map.
 

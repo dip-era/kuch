@@ -268,7 +268,7 @@ export default function App() {
   return <main className="app-shell">
     <header className="topbar">
       <div className="brand-icon"><svg viewBox="0 0 40 40" fill="none"><path d="m20 4 16 9-16 9L4 13 20 4Zm-16 16 16 9 16-9M4 27l16 9 16-9" stroke="currentColor" strokeWidth="2" /><path d="m12 13 8-4 8 4-8 4-8-4Z" fill="currentColor" opacity=".4" /></svg></div>
-      <h1>LiDAR<span>-X</span></h1><div className="brand-divider" />
+      <h1>Point<span>Matrix</span></h1><div className="brand-divider" />
       <p className="tagline">Adaptive 2.5D Semantic Mapping<span>INDEPENDENT VIEW WINDOWS</span></p>
       <div className="topbar-right"><span className="status-badge"><i className="status-dot" />{uploaded ? 'Scan processed' : 'Dataset explorer'}</span>
         <button className="primary upload-trigger" onClick={() => setUploadOpen(true)} disabled={!UPLOADS_ENABLED}
@@ -277,7 +277,7 @@ export default function App() {
     </header>
 
     <div className="session-bar">
-      <div><span className="eyebrow">ACTIVE SOURCE</span><strong>{uploaded ? uploaded.filename : 'Semantic LiDAR / Recorded sequence'}</strong>
+      <div><span className="eyebrow">ACTIVE SOURCE</span><strong>{uploaded ? uploaded.filename : 'PointMatrix / Recorded sequence'}</strong>
         <span className="source-chip">{uploaded ? 'USER UPLOAD' : `${number(frameCount)} FRAMES`}</span></div>
       <div className="session-actions">
         {uploaded && UPLOADS_ENABLED && <a className="button-link" href={apiUrl(`/jobs/${uploaded.jobId}/download`)}>↓ Download NPZ</a>}
@@ -361,7 +361,7 @@ export default function App() {
         </section>
       </>}
 
-    <footer className="bottom-note"><span>LiDAR-X <b>/</b> INDEPENDENT PLAYBACK WORKSPACE</span>
+    <footer className="bottom-note"><span>PointMatrix <b>/</b> INDEPENDENT PLAYBACK WORKSPACE</span>
       <span>Three viewer windows run on separate frame indices while sharing the same dataset and controls.</span></footer>
     {uploadOpen && <Upload onComplete={acceptUpload} onClose={() => setUploadOpen(false)} />}
   </main>
