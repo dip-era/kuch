@@ -312,8 +312,8 @@ export default function App() {
   }))
 
   const frameCount = dataset?.frameIds.length ?? 0
-  const featuredViewer = VIEWERS.find(({ id }) => id === 'semantic')
-  const secondaryViewers = VIEWERS.filter(({ id }) => id !== 'semantic')
+  const semanticFrame = frames.semantic?.meta ?? {}
+  const activeViewerCount = VIEWER_IDS.filter(id => windowState[id].playing).length
 
   const toggleClass = id => setHiddenClasses(previous => {
     const next = new Set(previous)
@@ -377,16 +377,26 @@ export default function App() {
     {!dataset && !uploaded ? <div className="loading-state"><div className="radar" /><h2>{error ? 'Frame data unavailable' : 'Loading spatial data'}</h2>
       <p>{error ? 'You can still upload a new scan with the button above.' : 'Preparing independent playback windows...'}</p></div>
       : <>
-        <section className="viewer-featured">
-          {featuredViewer && renderViewer(featuredViewer, 'viewer-card--featured')}
-        </section>
+        <section className="dashboard-layout">
+          {renderViewer(VIEWERS.find(({ id }) => id === 'raw'), 'layout-panel layout-raw')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'segmentation'), 'layout-panel layout-segmentation')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'semantic'), 'layout-panel viewer-card--featured layout-semantic')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'elevation'), 'layout-panel layout-elevation')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'drivability'), 'layout-panel layout-drivability')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'resolution'), 'layout-panel layout-resolution')}
 
-        <section className="viewer-grid viewer-grid-secondary">
-          {secondaryViewers.map(viewer => renderViewer(viewer))}
-        </section>
+          <aside className="sidebar-panels layout-sidebar">
+            <div className="control-card control-card-compact">
+              <span className="eyebrow">SYSTEM METRICS</span>
+              <h2>Sequence summary</h2>
+              <Row label="Frame" value={frameCount ? `${windowState.semantic.frameIndex + 1} / ${number(frameCount)}` : '0 / 0'} />
+              <Row label="Semantic cells" value={number(semanticFrame.final_cells ?? semanticFrame.output_cells ?? 0)} />
+              <Row label="Input points" value={number(semanticFrame.total_input_points)} />
+              <Row label="End-to-end" value={ms(semanticFrame.total_ms)} />
+              <Row label="Playing windows" value={`${activeViewerCount} / ${VIEWERS.length}`} />
+            </div>
 
-        <section className="control-section">
-          <div className="control-card">
+            <div className="control-card">
             <span className="eyebrow">SHARED VIEW CONTROLS</span>
             <h2>Display tuning</h2>
             <label className="checkbox"><input type="checkbox" checked={elevated} onChange={e => setElevated(e.target.checked)} /> Elevation (2.5D columns)</label>
@@ -405,9 +415,9 @@ export default function App() {
             <label className="point-size-label" htmlFor="point-size"><span>Point size</span><b>{pointSize.toFixed(1)} px</b></label>
             <input id="point-size" className="point-size-slider" type="range" min="1" max="4" step=".2"
               value={pointSize} onChange={e => setPointSize(Number(e.target.value))} />
-          </div>
+            </div>
 
-          <div className="control-card">
+            <div className="control-card">
             <span className="eyebrow">DRIVABILITY PROFILE</span>
             <h2>Vehicle thresholds</h2>
             <label className="field-label" htmlFor="vehicle-profile">Profile</label>
@@ -433,7 +443,8 @@ export default function App() {
                 }} />
             </div>)}
             <button onClick={() => setDrivabilityOptions({ ...DEFAULT_DRIVABILITY })}>Reset drivability</button>
-          </div>
+            </div>
+          </aside>
         </section>
       </>}
 
