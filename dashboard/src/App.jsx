@@ -12,15 +12,16 @@ import { egoPosition } from './ego'
 const EMPTY = new Set()
 const EMPTY_CELLS = []
 const VIEWERS = [
-  { id: 'raw', kind: 'points', mode: 'height', title: 'Raw LiDAR Points', note: 'XYZ geometry colored by elevation', toolbarLabel: 'Height (Z)' },
-  { id: 'segmentation', kind: 'points', mode: 'semantic', title: 'Semantic Segmentation', note: 'Per-point semantic classes with continuous playback', toolbarLabel: 'Semantic classes' },
+  { id: 'raw', kind: 'points', mode: 'height', title: 'Raw LiDAR Points', note: 'XYZ geometry colored by elevation', toolbarLabel: 'Height (Z)', defaultZoom: 3.1 },
+  { id: 'segmentation', kind: 'points', mode: 'semantic', title: 'Semantic Segmentation', note: 'Per-point semantic classes with continuous playback', toolbarLabel: 'Semantic classes', defaultZoom: 3.1 },
   { id: 'semantic', kind: 'map', mode: 'semantic', title: 'Semantic 2.5D Map', note: 'Adaptive semantic grid with 2.5D structure' },
-  { id: 'resolution', kind: 'map', mode: 'resolution', title: 'Adaptive Resolution Map', note: 'Exact adaptive cells colored by local grid resolution', defaultTopDown: true },
-  { id: 'elevation', kind: 'map', mode: 'elevation', title: 'Elevation Map', note: 'Height field view of the adaptive grid', defaultTopDown: true },
-  { id: 'drivability', kind: 'map', mode: 'drivability', title: 'Drivability Map', note: 'Exact cells classified by vehicle profile', defaultTopDown: true },
+  { id: 'resolution', kind: 'map', mode: 'resolution', title: 'Adaptive Resolution Map', note: 'Exact adaptive cells colored by local grid resolution', defaultTopDown: true, defaultZoom: 4.2 },
+  { id: 'elevation', kind: 'map', mode: 'elevation', title: 'Elevation Map', note: 'Height field view of the adaptive grid', defaultTopDown: true, defaultZoom: 4.2 },
+  { id: 'drivability', kind: 'map', mode: 'drivability', title: 'Drivability Map', note: 'Exact cells classified by vehicle profile', defaultTopDown: true, defaultZoom: 4.2 },
 ]
 const VIEWER_IDS = VIEWERS.map(({ id }) => id)
 const viewerMap = value => Object.fromEntries(VIEWERS.map((viewer) => [viewer.id, typeof value === 'function' ? value(viewer) : value]))
+const viewerById = Object.fromEntries(VIEWERS.map((viewer) => [viewer.id, viewer]))
 
 const DEFAULT_ZOOM = 2
 const PLAYBACK_FRAME_MS = 80
@@ -35,7 +36,7 @@ function initialWindowState() {
     playing: false,
     speed: 8,
     topDown: viewer.defaultTopDown ?? false,
-    zoom: DEFAULT_ZOOM,
+    zoom: viewer.defaultZoom ?? DEFAULT_ZOOM,
     reset: 0,
     selected: null,
   }))
@@ -353,7 +354,12 @@ export default function App() {
     drivabilityOptions={drivabilityOptions} state={windowState[viewer.id]}
     setTopDown={value => updateViewerState(viewer.id, { topDown: value, selected: null })}
     setZoom={value => updateViewerState(viewer.id, { zoom: value })}
-    resetView={() => updateViewerState(viewer.id, previous => ({ ...previous, zoom: DEFAULT_ZOOM, reset: previous.reset + 1, selected: null }))}
+    resetView={() => updateViewerState(viewer.id, previous => ({
+      ...previous,
+      zoom: viewerById[viewer.id]?.defaultZoom ?? DEFAULT_ZOOM,
+      reset: previous.reset + 1,
+      selected: null,
+    }))}
     setSelected={value => updateViewerState(viewer.id, { selected: value })}
     step={delta => updateViewerState(viewer.id, previous => ({
       ...previous, playing: false, frameIndex: frameCount ? (previous.frameIndex + delta + frameCount) % frameCount : 0,
