@@ -132,7 +132,25 @@ function ViewerWindow({
   const retained = sourceCells.reduce((sum, cell) => sum + cell.point_count, 0)
   const isPointViewer = kind === 'points'
   const mapCells = mode === 'drivability' ? drivabilityCells : sourceCells
-  const semanticLegend = mode === 'semantic'
+  const featured = id === 'semantic'
+  const semanticLegend = id === 'semantic'
+  const allowExport = id === 'semantic' || id === 'drivability'
+  const metrics = featured
+    ? [
+        ['Input points', number(meta.total_input_points)],
+        [isPointViewer ? 'Rendered points' : 'Rendered', number(isPointViewer ? Math.round(points.length / 4) : meta.exported_points)],
+        [isPointViewer ? 'Adaptive cells' : 'Displayed cells', number(mapCells.length)],
+        ['End-to-end', ms(meta.total_ms)],
+        ...(mode === 'drivability' ? [['Drivable area', `${drivabilityArea.drivable.toFixed(1)} m²`]] : []),
+        ...(mode === 'semantic' && !isPointViewer
+          ? [['Retained points', `${meta.total_input_points ? (retained / meta.total_input_points * 100).toFixed(2) : '0.00'}%`]]
+          : []),
+      ]
+    : [
+        [isPointViewer ? 'Rendered points' : 'Displayed cells', number(isPointViewer ? Math.round(points.length / 4) : mapCells.length)],
+        [mode === 'drivability' ? 'Drivable area' : 'Input points', mode === 'drivability' ? `${drivabilityArea.drivable.toFixed(1)} m²` : number(meta.total_input_points)],
+        ['Latency', ms(meta.total_ms)],
+      ]
 
   const captureView = async () => {
     if (!captureRef.current || !frame) return
@@ -163,7 +181,7 @@ function ViewerWindow({
       <div className="viewer-actions">
         <button onClick={resetView}>Reset view</button>
         <button onClick={captureView} disabled={!frame}>Capture</button>
-        {!isPointViewer && <button onClick={() => downloadJSON(frame, drivabilityOptions)} disabled={!frame}>Export JSON</button>}
+        {!isPointViewer && allowExport && <button onClick={() => downloadJSON(frame, drivabilityOptions)} disabled={!frame}>Export JSON</button>}
       </div>
     </div>
     <ZoomStrip zoom={state.zoom} onChange={setZoom} disabled={!frame} />
@@ -189,15 +207,10 @@ function ViewerWindow({
         <small>{drivabilityOptions.profile} profile<br />Unknown = no returns</small>
       </div>}
       {!isPointViewer && <SelectionCard selected={state.selected} drivabilityOptions={drivabilityOptions} onClose={() => setSelected(null)} />}
-      <div className="viewer-note">{uploaded ? meta.method : note}</div>
+      {featured && <div className="viewer-note">{uploaded ? meta.method : note}</div>}
     </div>
     <div className="viewer-metrics">
-      <Row label="Input points" value={number(meta.total_input_points)} />
-      <Row label={isPointViewer ? 'Rendered points' : 'Rendered'} value={number(isPointViewer ? Math.round(points.length / 4) : meta.exported_points)} />
-      <Row label={isPointViewer ? 'Adaptive cells' : 'Displayed cells'} value={number(mapCells.length)} />
-      <Row label="End-to-end" value={ms(meta.total_ms)} />
-      {mode === 'drivability' && <Row label="Drivable area" value={`${drivabilityArea.drivable.toFixed(1)} m²`} />}
-      {mode === 'semantic' && !isPointViewer && <Row label="Retained points" value={`${meta.total_input_points ? (retained / meta.total_input_points * 100).toFixed(2) : '0.00'}%`} />}
+      {metrics.map(([label, value]) => <Row key={label} label={label} value={value} />)}
     </div>
     <PlaybackStrip disabled={disabled} frameIndex={state.frameIndex} frameCount={frameCount} playing={state.playing}
       speed={state.speed} onStep={step} onToggle={togglePlaying} onScrub={scrub} onSpeed={setSpeed} />
@@ -378,12 +391,12 @@ export default function App() {
       <p>{error ? 'You can still upload a new scan with the button above.' : 'Preparing independent playback windows...'}</p></div>
       : <>
         <section className="dashboard-layout">
-          {renderViewer(VIEWERS.find(({ id }) => id === 'raw'), 'layout-panel layout-raw')}
-          {renderViewer(VIEWERS.find(({ id }) => id === 'segmentation'), 'layout-panel layout-segmentation')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'raw'), 'layout-panel viewer-card--secondary layout-raw')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'segmentation'), 'layout-panel viewer-card--secondary layout-segmentation')}
           {renderViewer(VIEWERS.find(({ id }) => id === 'semantic'), 'layout-panel viewer-card--featured layout-semantic')}
-          {renderViewer(VIEWERS.find(({ id }) => id === 'elevation'), 'layout-panel layout-elevation')}
-          {renderViewer(VIEWERS.find(({ id }) => id === 'drivability'), 'layout-panel layout-drivability')}
-          {renderViewer(VIEWERS.find(({ id }) => id === 'resolution'), 'layout-panel layout-resolution')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'elevation'), 'layout-panel viewer-card--secondary layout-elevation')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'drivability'), 'layout-panel viewer-card--secondary layout-drivability')}
+          {renderViewer(VIEWERS.find(({ id }) => id === 'resolution'), 'layout-panel viewer-card--secondary layout-resolution')}
 
           <aside className="sidebar-panels layout-sidebar">
             <div className="control-card control-card-compact">
