@@ -18,6 +18,7 @@ const VIEWERS = [
 ]
 
 const DEFAULT_ZOOM = 2.7
+const PLAYBACK_FRAME_MS = 250
 const number = value => Number(value ?? 0).toLocaleString()
 const ms = value => value == null ? 'Not recorded' : `${value.toFixed(1)} ms`
 
@@ -248,7 +249,7 @@ export default function App() {
           ...previous,
           [id]: { ...previous[id], frameIndex: (previous[id].frameIndex + 1) % frameCount },
         }))
-      }, 500 / windowState[id].speed)]
+      }, PLAYBACK_FRAME_MS / windowState[id].speed)]
     })
     return () => timers.forEach(clearTimeout)
   }, [
