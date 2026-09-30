@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: point-matrix
+    runtime: python
+    buildCommand: bash render-build.sh
+    startCommand: python -m uvicorn backend.app:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: NODE_VERSION
+        value: 22.16.0
