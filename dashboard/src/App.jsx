@@ -12,10 +12,15 @@ import { egoPosition } from './ego'
 const EMPTY = new Set()
 const EMPTY_CELLS = []
 const VIEWERS = [
-  { id: 'raw', title: 'Raw LiDAR Points', note: 'XYZ geometry colored by elevation' },
-  { id: 'semantic', title: 'Semantic 2.5D Map', note: 'Adaptive semantic grid with 2.5D structure' },
-  { id: 'drivability', title: 'Drivability Map', note: 'Exact cells classified by vehicle profile' },
+  { id: 'raw', kind: 'points', mode: 'height', title: 'Raw LiDAR Points', note: 'XYZ geometry colored by elevation', toolbarLabel: 'Height (Z)' },
+  { id: 'segmentation', kind: 'points', mode: 'semantic', title: 'Semantic Segmentation', note: 'Per-point semantic classes with continuous playback', toolbarLabel: 'Semantic classes' },
+  { id: 'semantic', kind: 'map', mode: 'semantic', title: 'Semantic 2.5D Map', note: 'Adaptive semantic grid with 2.5D structure' },
+  { id: 'resolution', kind: 'map', mode: 'resolution', title: 'Adaptive Resolution Map', note: 'Exact adaptive cells colored by local grid resolution', defaultTopDown: true },
+  { id: 'elevation', kind: 'map', mode: 'elevation', title: 'Elevation Map', note: 'Height field view of the adaptive grid', defaultTopDown: true },
+  { id: 'drivability', kind: 'map', mode: 'drivability', title: 'Drivability Map', note: 'Exact cells classified by vehicle profile', defaultTopDown: true },
 ]
+const VIEWER_IDS = VIEWERS.map(({ id }) => id)
+const viewerMap = value => Object.fromEntries(VIEWERS.map((viewer) => [viewer.id, typeof value === 'function' ? value(viewer) : value]))
 
 const DEFAULT_ZOOM = 2.7
 const PLAYBACK_FRAME_MS = 80
@@ -25,11 +30,15 @@ const number = value => Number(value ?? 0).toLocaleString()
 const ms = value => value == null ? 'Not recorded' : `${value.toFixed(1)} ms`
 
 function initialWindowState() {
-  return {
-    raw: { frameIndex: 0, playing: false, speed: 8, topDown: false, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
-    semantic: { frameIndex: 0, playing: false, speed: 8, topDown: false, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
-    drivability: { frameIndex: 0, playing: false, speed: 8, topDown: true, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
-  }
+  return viewerMap(viewer => ({
+    frameIndex: 0,
+    playing: false,
+    speed: 8,
+    topDown: viewer.defaultTopDown ?? false,
+    zoom: DEFAULT_ZOOM,
+    reset: 0,
+    selected: null,
+  }))
 }
 
 function Row({ label, value }) {
@@ -109,18 +118,21 @@ function SelectionCard({ selected, drivabilityOptions, onClose }) {
 }
 
 function ViewerWindow({
-  id, title, note, frame, loading, uploaded, frameCount, hiddenClasses, onToggleClass, onShowAllClasses,
+  id, kind, mode, title, note, toolbarLabel, frame, loading, uploaded, frameCount, hiddenClasses, onToggleClass, onShowAllClasses,
   boundaries, elevated, representation, detail, pointSize, showEgo, drivabilityOptions,
   state, setTopDown, setZoom, resetView, setSelected, step, togglePlaying, scrub, setSpeed,
 }) {
   const captureRef = useRef(null)
   const meta = frame?.meta ?? {}
   const sourceCells = frame?.grid ?? EMPTY_CELLS
-  const { grid: cells, area: drivabilityArea } = useMemo(() => classifyGrid(sourceCells, drivabilityOptions), [sourceCells, drivabilityOptions])
+  const { grid: drivabilityCells, area: drivabilityArea } = useMemo(() => classifyGrid(sourceCells, drivabilityOptions), [sourceCells, drivabilityOptions])
   const points = frame?.points ?? new Float32Array()
   const view = useMemo(() => createView(sourceCells, detail, points), [sourceCells, detail, points])
   const ego = useMemo(() => showEgo ? egoPosition(sourceCells) : null, [sourceCells, showEgo])
-  const retained = cells.reduce((sum, cell) => sum + cell.point_count, 0)
+  const retained = sourceCells.reduce((sum, cell) => sum + cell.point_count, 0)
+  const isPointViewer = kind === 'points'
+  const mapCells = mode === 'drivability' ? drivabilityCells : sourceCells
+  const semanticLegend = mode === 'semantic'
 
   const captureView = async () => {
     if (!captureRef.current || !frame) return
@@ -147,45 +159,45 @@ function ViewerWindow({
       </div>
     </header>
     <div className="viewer-toolbar">
-      {id === 'raw' ? <span className="viewer-toolbar-label">Height (Z)</span> : <ViewToggle value={state.topDown} onChange={setTopDown} />}
+      {!isPointViewer ? <ViewToggle value={state.topDown} onChange={setTopDown} /> : <span className="viewer-toolbar-label">{toolbarLabel}</span>}
       <div className="viewer-actions">
         <button onClick={resetView}>Reset view</button>
         <button onClick={captureView} disabled={!frame}>Capture</button>
-        {id !== 'raw' && <button onClick={() => downloadJSON(frame, drivabilityOptions)} disabled={!frame}>Export JSON</button>}
+        {!isPointViewer && <button onClick={() => downloadJSON(frame, drivabilityOptions)} disabled={!frame}>Export JSON</button>}
       </div>
     </div>
     <ZoomStrip zoom={state.zoom} onChange={setZoom} disabled={!frame} />
     <div className="viewer-stage">
-      {id === 'raw'
-        ? <PointCloud points={points} hiddenClasses={EMPTY} mode="height" topDown={false} view={view} pointSize={pointSize}
+      {isPointViewer
+        ? <PointCloud points={points} hiddenClasses={semanticLegend ? hiddenClasses : EMPTY} mode={mode} topDown={false} view={view} pointSize={pointSize}
           ego={ego} playing={state.playing} zoom={state.zoom} onZoomChange={setZoom} captureRef={captureRef} />
-        : <SemanticMap cells={id === 'semantic' ? sourceCells : cells} hiddenClasses={id === 'semantic' ? hiddenClasses : EMPTY}
-          mode={id === 'semantic' ? 'semantic' : 'drivability'} boundaries={boundaries} elevated={elevated}
+        : <SemanticMap cells={mapCells} hiddenClasses={semanticLegend ? hiddenClasses : EMPTY}
+          mode={mode} boundaries={boundaries} elevated={elevated}
           topDown={state.topDown} reset={state.reset} onSelect={setSelected} captureRef={captureRef}
-          representation={id === 'semantic' ? representation : 'cells'} view={view} selected={state.selected}
+          representation={mode === 'semantic' ? representation : 'cells'} view={view} selected={state.selected}
           zoom={state.zoom} onZoomChange={setZoom} ego={ego} playing={state.playing} />}
       {loading && <div className="viewer-loading">Loading frame…</div>}
-      {id === 'semantic' && <div className="semantic-legend viewer-legend">
+      {semanticLegend && <div className="semantic-legend viewer-legend">
         <div>Semantic classes <button onClick={onShowAllClasses}>Show all</button></div>
         {Object.entries(KNOWN_CLASSES).map(([classId, name]) => <button key={classId} className={hiddenClasses.has(Number(classId)) ? 'muted' : ''}
           aria-pressed={!hiddenClasses.has(Number(classId))} onClick={() => onToggleClass(Number(classId))}>
           <i style={{ background: colorForClass(Number(classId)) }} />{name}</button>)}
       </div>}
-      {id === 'drivability' && <div className="semantic-legend drivability-legend viewer-legend">
+      {mode === 'drivability' && <div className="semantic-legend drivability-legend viewer-legend">
         <div>Drivability</div>
         {Object.entries(DRIVABILITY_COLORS).map(([status, color]) => <p key={status}><i style={{ background: color }} />{status}</p>)}
         <small>{drivabilityOptions.profile} profile<br />Unknown = no returns</small>
       </div>}
-      {id !== 'raw' && <SelectionCard selected={state.selected} drivabilityOptions={drivabilityOptions} onClose={() => setSelected(null)} />}
+      {!isPointViewer && <SelectionCard selected={state.selected} drivabilityOptions={drivabilityOptions} onClose={() => setSelected(null)} />}
       <div className="viewer-note">{uploaded ? meta.method : note}</div>
     </div>
     <div className="viewer-metrics">
       <Row label="Input points" value={number(meta.total_input_points)} />
-      <Row label="Rendered" value={number(meta.exported_points)} />
-      <Row label={id === 'raw' ? 'Semantic cells' : 'Displayed cells'} value={number(cells.length)} />
+      <Row label={isPointViewer ? 'Rendered points' : 'Rendered'} value={number(isPointViewer ? Math.round(points.length / 4) : meta.exported_points)} />
+      <Row label={isPointViewer ? 'Adaptive cells' : 'Displayed cells'} value={number(mapCells.length)} />
       <Row label="End-to-end" value={ms(meta.total_ms)} />
-      {id === 'drivability' && <Row label="Drivable area" value={`${drivabilityArea.drivable.toFixed(1)} m²`} />}
-      {id === 'semantic' && <Row label="Retained points" value={`${meta.total_input_points ? (retained / meta.total_input_points * 100).toFixed(2) : '0.00'}%`} />}
+      {mode === 'drivability' && <Row label="Drivable area" value={`${drivabilityArea.drivable.toFixed(1)} m²`} />}
+      {mode === 'semantic' && !isPointViewer && <Row label="Retained points" value={`${meta.total_input_points ? (retained / meta.total_input_points * 100).toFixed(2) : '0.00'}%`} />}
     </div>
     <PlaybackStrip disabled={disabled} frameIndex={state.frameIndex} frameCount={frameCount} playing={state.playing}
       speed={state.speed} onStep={step} onToggle={togglePlaying} onScrub={scrub} onSpeed={setSpeed} />
@@ -195,7 +207,7 @@ function ViewerWindow({
 export default function App() {
   const [dataset, setDataset] = useState(null)
   const [frames, setFrames] = useState({})
-  const [loadingByViewer, setLoadingByViewer] = useState({ raw: true, semantic: true, drivability: true })
+  const [loadingByViewer, setLoadingByViewer] = useState(() => viewerMap(true))
   const [windowState, setWindowState] = useState(initialWindowState)
   const [error, setError] = useState('')
   const [uploaded, setUploaded] = useState(null)
@@ -208,19 +220,23 @@ export default function App() {
   const [pointSize, setPointSize] = useState(1.8)
   const [drivabilityOptions, setDrivabilityOptions] = useState(() => ({ ...DEFAULT_DRIVABILITY }))
   const [showEgo, setShowEgo] = useState(true)
-  const playbackClock = useRef({ last: 0, carry: { raw: 0, semantic: 0, drivability: 0 } })
+  const playbackClock = useRef({ last: 0, carry: viewerMap(0) })
+  const frameIndexSignature = VIEWER_IDS.map(id => windowState[id].frameIndex).join('|')
+  const playbackSignature = VIEWER_IDS
+    .map(id => `${loadingByViewer[id] ? 1 : 0}:${windowState[id].playing ? 1 : 0}:${windowState[id].speed}:${windowState[id].frameIndex}`)
+    .join('|')
 
   useEffect(() => {
     let active = true
     loadFrames().then(result => { if (active) setDataset(result) })
-      .catch(nextError => { if (active) { setError(nextError.message); setLoadingByViewer({ raw: false, semantic: false, drivability: false }) } })
+      .catch(nextError => { if (active) { setError(nextError.message); setLoadingByViewer(viewerMap(false)) } })
     return () => { active = false }
   }, [])
 
   useEffect(() => {
     if (uploaded) {
-      setFrames({ raw: uploaded, semantic: uploaded, drivability: uploaded })
-      setLoadingByViewer({ raw: false, semantic: false, drivability: false })
+      setFrames(viewerMap(uploaded))
+      setLoadingByViewer(viewerMap(false))
       return
     }
     if (!dataset) return
@@ -241,12 +257,12 @@ export default function App() {
       })
     }
     return () => { active = false }
-  }, [dataset, uploaded, windowState.raw.frameIndex, windowState.semantic.frameIndex, windowState.drivability.frameIndex])
+  }, [dataset, uploaded, frameIndexSignature])
 
   useEffect(() => {
     if (!dataset || uploaded) return
     playbackClock.current.last = 0
-    playbackClock.current.carry = { raw: 0, semantic: 0, drivability: 0 }
+    playbackClock.current.carry = viewerMap(0)
     let rafId = 0
     const frameCount = dataset.frameIds.length
     const tick = now => {
@@ -275,12 +291,7 @@ export default function App() {
     }
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
-  }, [
-    dataset, uploaded, loadingByViewer.raw, loadingByViewer.semantic, loadingByViewer.drivability,
-    windowState.raw.playing, windowState.raw.speed, windowState.raw.frameIndex,
-    windowState.semantic.playing, windowState.semantic.speed, windowState.semantic.frameIndex,
-    windowState.drivability.playing, windowState.drivability.speed, windowState.drivability.frameIndex,
-  ])
+  }, [dataset, uploaded, playbackSignature])
 
   useEffect(() => {
     if (!dataset || uploaded) return
@@ -293,7 +304,7 @@ export default function App() {
         dataset.loadFrame(dataset.frameIds[nextIndex]).catch(() => {})
       }
     }
-  }, [dataset, uploaded, windowState.raw.frameIndex, windowState.semantic.frameIndex, windowState.drivability.frameIndex])
+  }, [dataset, uploaded, frameIndexSignature])
 
   const updateViewerState = (id, update) => setWindowState(previous => ({
     ...previous,
@@ -338,7 +349,7 @@ export default function App() {
           ? <a className="button-link" href={uploaded.frameUrl} download>↓ Download frame (.lgf.gz)</a>
           : uploaded && BACKEND === 'api' && <a className="button-link" href={apiUrl(`/jobs/${uploaded.jobId}/download`)}>↓ Download NPZ</a>}
         {uploaded ? <button onClick={() => setUploaded(null)}>← Back to sequence</button>
-          : <span className="session-note">Each window keeps its own frame, speed, and playback state.</span>}
+          : <span className="session-note">Each window keeps its own frame, speed, zoom, and playback state.</span>}
       </div>
     </div>
 
@@ -418,7 +429,7 @@ export default function App() {
       </>}
 
     <footer className="bottom-note"><span>PointMatrix <b>/</b> INDEPENDENT PLAYBACK WORKSPACE</span>
-      <span>Three viewer windows run on separate frame indices while sharing the same dataset and controls.</span></footer>
+      <span>{VIEWERS.length} viewer windows run on separate frame indices while sharing the same dataset and controls.</span></footer>
     {uploadOpen && <Upload onComplete={acceptUpload} onClose={() => setUploadOpen(false)} />}
   </main>
 }
