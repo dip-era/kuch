@@ -26,9 +26,9 @@ const ms = value => value == null ? 'Not recorded' : `${value.toFixed(1)} ms`
 
 function initialWindowState() {
   return {
-    raw: { frameIndex: 0, playing: false, speed: 1, topDown: false, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
-    semantic: { frameIndex: 0, playing: false, speed: 1, topDown: false, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
-    drivability: { frameIndex: 0, playing: false, speed: 1, topDown: true, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
+    raw: { frameIndex: 0, playing: false, speed: 8, topDown: false, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
+    semantic: { frameIndex: 0, playing: false, speed: 8, topDown: false, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
+    drivability: { frameIndex: 0, playing: false, speed: 8, topDown: true, zoom: DEFAULT_ZOOM, reset: 0, selected: null },
   }
 }
 
