@@ -22,7 +22,7 @@ const VIEWERS = [
 const VIEWER_IDS = VIEWERS.map(({ id }) => id)
 const viewerMap = value => Object.fromEntries(VIEWERS.map((viewer) => [viewer.id, typeof value === 'function' ? value(viewer) : value]))
 
-const DEFAULT_ZOOM = 2.7
+const DEFAULT_ZOOM = 2
 const PLAYBACK_FRAME_MS = 80
 const PREFETCH_AHEAD = 6
 const PREFETCH_BEHIND = 2
