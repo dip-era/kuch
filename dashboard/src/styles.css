@@ -94,6 +94,9 @@ select{color:#c3d7e6;background:#0a1b29;border:1px solid #264358;border-radius:5
 .field-label{display:block;font-size:10px;color:#90a7bb;margin:12px 0 7px}
 .checkbox{display:flex;gap:8px;align-items:center;font-size:10px;padding:5px 0;cursor:pointer}
 .checkbox input{accent-color:#35b9f0;width:13px;height:13px;margin:0}
+.checkbox-static{cursor:default}
+.checkbox-static input{pointer-events:none}
+.checkbox-disabled{opacity:.55}
 .point-size-label{display:flex;justify-content:space-between;font-size:10px;color:#90a7bb;margin:12px 0 8px}
 .point-size-label b{font:10px monospace;color:#65c2ea}
 .point-size-slider{width:100%;height:4px;accent-color:#37bff3;display:block;margin:8px 0 12px}
@@ -108,6 +111,9 @@ select{color:#c3d7e6;background:#0a1b29;border:1px solid #264358;border-radius:5
 .drivability-legend p{display:flex;align-items:center;gap:8px;font-size:11px;text-transform:capitalize}
 .drivability-legend p i{width:9px;height:9px;border-radius:2px}
 .drivability-legend small{font-size:9px;color:#9cb0c0;line-height:1.7}
+.resolution-legend{left:auto;right:11px;width:126px}
+.resolution-legend p{display:flex;align-items:center;gap:8px;font-size:10px;margin:8px 0;color:#bfd3e1}
+.resolution-legend p i{width:12px;height:12px;border-radius:3px;flex:none}
 .ego-badge{display:flex;align-items:center;gap:5px;padding:4px 7px;border:1px solid #00f0df;background:#05252cef;border-radius:4px;color:#e7fffd;font:bold 10px "Courier New",monospace;white-space:nowrap;box-shadow:0 0 12px #00f0df28}
 .ego-badge i{width:7px;height:7px;border-radius:2px;background:#00f0df;flex:none}
 .ego-badge span{color:#00f0df;font-size:8px;border-left:1px solid #23857f;padding-left:5px}

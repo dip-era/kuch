@@ -4,7 +4,7 @@ import SemanticMap from './components/SemanticMap'
 import Upload from './components/Upload'
 import { BACKEND, UPLOADS_ENABLED, apiUrl } from './config'
 import { loadFrames } from './data'
-import { KNOWN_CLASSES, colorForClass, nameForClass } from './palette'
+import { KNOWN_CLASSES, colorForClass, layerColor, nameForClass } from './palette'
 import { createView } from './scene'
 import { classifyCell, classifyGrid, DEFAULT_DRIVABILITY, DRIVABILITY_COLORS } from './drivability'
 import { egoPosition } from './ego'
@@ -27,6 +27,12 @@ const DEFAULT_ZOOM = 2
 const PLAYBACK_FRAME_MS = 80
 const PREFETCH_AHEAD = 6
 const PREFETCH_BEHIND = 2
+const RESOLUTION_LEGEND = [
+  { label: '6.25 cm', resolution: 0.0625 },
+  { label: '12.5 cm', resolution: 0.125 },
+  { label: '25 cm', resolution: 0.25 },
+  { label: '50 cm', resolution: 0.5 },
+]
 const number = value => Number(value ?? 0).toLocaleString()
 const ms = value => value == null ? 'Not recorded' : `${value.toFixed(1)} ms`
 
@@ -206,6 +212,12 @@ function ViewerWindow({
         <div>Drivability</div>
         {Object.entries(DRIVABILITY_COLORS).map(([status, color]) => <p key={status}><i style={{ background: color }} />{status}</p>)}
         <small>{drivabilityOptions.profile} profile<br />Unknown = no returns</small>
+      </div>}
+      {mode === 'resolution' && <div className="semantic-legend resolution-legend viewer-legend">
+        <div>Cell Resolution</div>
+        {RESOLUTION_LEGEND.map(({ label, resolution }) => <p key={label}>
+          <i style={{ background: layerColor({ resolution }, 'resolution') }} />{label}
+        </p>)}
       </div>}
       {!isPointViewer && <SelectionCard selected={state.selected} drivabilityOptions={drivabilityOptions} onClose={() => setSelected(null)} />}
       {featured && <div className="viewer-note">{uploaded ? meta.method : note}</div>}
@@ -416,10 +428,19 @@ export default function App() {
             </div>
 
             <div className="control-card">
+              <span className="eyebrow">LAYER CONTROLS</span>
+              <h2>Visible layers</h2>
+              <label className="checkbox checkbox-static"><input type="checkbox" checked readOnly /> Semantic (Class colors)</label>
+              <label className="checkbox"><input type="checkbox" checked={elevated} onChange={e => setElevated(e.target.checked)} /> Elevation (Height map)</label>
+              <label className="checkbox checkbox-static"><input type="checkbox" checked readOnly /> Traversability (Drivable / Non-drivable)</label>
+              <label className="checkbox checkbox-static"><input type="checkbox" checked readOnly /> Resolution (Cell size)</label>
+              <label className="checkbox checkbox-static checkbox-disabled"><input type="checkbox" checked={false} readOnly /> Point density</label>
+              <label className="checkbox"><input type="checkbox" checked={boundaries} onChange={e => setBoundaries(e.target.checked)} /> Show cell boundaries</label>
+            </div>
+
+            <div className="control-card">
             <span className="eyebrow">SHARED VIEW CONTROLS</span>
             <h2>Display tuning</h2>
-            <label className="checkbox"><input type="checkbox" checked={elevated} onChange={e => setElevated(e.target.checked)} /> Elevation (2.5D columns)</label>
-            <label className="checkbox"><input type="checkbox" checked={boundaries} onChange={e => setBoundaries(e.target.checked)} /> Show cell boundaries</label>
             <label className="checkbox"><input type="checkbox" checked={showEgo} onChange={e => setShowEgo(e.target.checked)} /> Show our car (cyan ego marker)</label>
             <label className="field-label" htmlFor="scene-extent">Spatial extent</label>
             <select id="scene-extent" value={detail ? 'detail' : 'full'} onChange={e => setDetail(e.target.value === 'detail')}>
