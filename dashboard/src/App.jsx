@@ -120,7 +120,7 @@ function SelectionCard({ selected, drivabilityOptions, onClose }) {
 function ViewerWindow({
   id, kind, mode, title, note, toolbarLabel, frame, loading, uploaded, frameCount, hiddenClasses, onToggleClass, onShowAllClasses,
   boundaries, elevated, representation, detail, pointSize, showEgo, drivabilityOptions,
-  state, setTopDown, setZoom, resetView, setSelected, step, togglePlaying, scrub, setSpeed,
+  state, setTopDown, setZoom, resetView, setSelected, step, togglePlaying, scrub, setSpeed, className = '',
 }) {
   const captureRef = useRef(null)
   const meta = frame?.meta ?? {}
@@ -147,7 +147,7 @@ function ViewerWindow({
 
   const disabled = uploaded || !frameCount
 
-  return <section className="viewer-card">
+  return <section className={`viewer-card ${className}`.trim()}>
     <header className="viewer-header">
       <div>
         <span className="eyebrow">{id.toUpperCase()}</span>
@@ -312,6 +312,8 @@ export default function App() {
   }))
 
   const frameCount = dataset?.frameIds.length ?? 0
+  const featuredViewer = VIEWERS.find(({ id }) => id === 'semantic')
+  const secondaryViewers = VIEWERS.filter(({ id }) => id !== 'semantic')
 
   const toggleClass = id => setHiddenClasses(previous => {
     const next = new Set(previous)
@@ -329,6 +331,23 @@ export default function App() {
     }])))
     setError('')
   }
+
+  const renderViewer = (viewer, className = '') => <ViewerWindow key={viewer.id} {...viewer} className={className}
+    frame={frames[viewer.id]} loading={loadingByViewer[viewer.id]}
+    uploaded={uploaded} frameCount={frameCount} hiddenClasses={hiddenClasses} onToggleClass={toggleClass}
+    onShowAllClasses={() => setHiddenClasses(new Set())} boundaries={boundaries} elevated={elevated}
+    representation={representation} detail={detail} pointSize={pointSize} showEgo={showEgo}
+    drivabilityOptions={drivabilityOptions} state={windowState[viewer.id]}
+    setTopDown={value => updateViewerState(viewer.id, { topDown: value, selected: null })}
+    setZoom={value => updateViewerState(viewer.id, { zoom: value })}
+    resetView={() => updateViewerState(viewer.id, previous => ({ ...previous, zoom: DEFAULT_ZOOM, reset: previous.reset + 1, selected: null }))}
+    setSelected={value => updateViewerState(viewer.id, { selected: value })}
+    step={delta => updateViewerState(viewer.id, previous => ({
+      ...previous, playing: false, frameIndex: frameCount ? (previous.frameIndex + delta + frameCount) % frameCount : 0,
+    }))}
+    togglePlaying={() => updateViewerState(viewer.id, previous => ({ ...previous, playing: !previous.playing }))}
+    scrub={value => updateViewerState(viewer.id, { playing: false, frameIndex: value })}
+    setSpeed={value => updateViewerState(viewer.id, { speed: value })} />
 
   return <main className="app-shell">
     <header className="topbar">
@@ -358,22 +377,12 @@ export default function App() {
     {!dataset && !uploaded ? <div className="loading-state"><div className="radar" /><h2>{error ? 'Frame data unavailable' : 'Loading spatial data'}</h2>
       <p>{error ? 'You can still upload a new scan with the button above.' : 'Preparing independent playback windows...'}</p></div>
       : <>
-        <section className="viewer-grid">
-          {VIEWERS.map(viewer => <ViewerWindow key={viewer.id} {...viewer} frame={frames[viewer.id]} loading={loadingByViewer[viewer.id]}
-            uploaded={uploaded} frameCount={frameCount} hiddenClasses={hiddenClasses} onToggleClass={toggleClass}
-            onShowAllClasses={() => setHiddenClasses(new Set())} boundaries={boundaries} elevated={elevated}
-            representation={representation} detail={detail} pointSize={pointSize} showEgo={showEgo}
-            drivabilityOptions={drivabilityOptions} state={windowState[viewer.id]}
-            setTopDown={value => updateViewerState(viewer.id, { topDown: value, selected: null })}
-            setZoom={value => updateViewerState(viewer.id, { zoom: value })}
-            resetView={() => updateViewerState(viewer.id, previous => ({ ...previous, zoom: DEFAULT_ZOOM, reset: previous.reset + 1, selected: null }))}
-            setSelected={value => updateViewerState(viewer.id, { selected: value })}
-            step={delta => updateViewerState(viewer.id, previous => ({
-              ...previous, playing: false, frameIndex: frameCount ? (previous.frameIndex + delta + frameCount) % frameCount : 0,
-            }))}
-            togglePlaying={() => updateViewerState(viewer.id, previous => ({ ...previous, playing: !previous.playing }))}
-            scrub={value => updateViewerState(viewer.id, { playing: false, frameIndex: value })}
-            setSpeed={value => updateViewerState(viewer.id, { speed: value })} />)}
+        <section className="viewer-featured">
+          {featuredViewer && renderViewer(featuredViewer, 'viewer-card--featured')}
+        </section>
+
+        <section className="viewer-grid viewer-grid-secondary">
+          {secondaryViewers.map(viewer => renderViewer(viewer))}
         </section>
 
         <section className="control-section">
