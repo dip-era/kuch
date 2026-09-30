@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import PointCloud from './components/PointCloud'
 import SemanticMap from './components/SemanticMap'
 import Upload from './components/Upload'
-import { UPLOADS_ENABLED, apiUrl } from './config'
+import { BACKEND, UPLOADS_ENABLED, apiUrl } from './config'
 import { loadFrames } from './data'
 import { KNOWN_CLASSES, colorForClass, nameForClass } from './palette'
 import { createView } from './scene'
@@ -290,7 +290,7 @@ export default function App() {
       <p className="tagline">Adaptive 2.5D Semantic Mapping<span>INDEPENDENT VIEW WINDOWS</span></p>
       <div className="topbar-right"><span className="status-badge"><i className="status-dot" />{uploaded ? 'Scan processed' : 'Dataset explorer'}</span>
         <button className="primary upload-trigger" onClick={() => setUploadOpen(true)} disabled={!UPLOADS_ENABLED}
-          title={UPLOADS_ENABLED ? 'Upload a point cloud to the processing backend' : 'Set VITE_API_BASE_URL to enable uploads'}>
+          title={UPLOADS_ENABLED ? 'Upload a point cloud for processing' : 'Set VITE_HF_SPACE (or VITE_API_BASE_URL) to enable uploads'}>
           <span>↑</span> Upload LiDAR</button></div>
     </header>
 
@@ -298,7 +298,9 @@ export default function App() {
       <div><span className="eyebrow">ACTIVE SOURCE</span><strong>{uploaded ? uploaded.filename : 'PointMatrix / Recorded sequence'}</strong>
         <span className="source-chip">{uploaded ? 'USER UPLOAD' : `${number(frameCount)} FRAMES`}</span></div>
       <div className="session-actions">
-        {uploaded && UPLOADS_ENABLED && <a className="button-link" href={apiUrl(`/jobs/${uploaded.jobId}/download`)}>↓ Download NPZ</a>}
+        {uploaded?.frameUrl
+          ? <a className="button-link" href={uploaded.frameUrl} download>↓ Download frame (.lgf.gz)</a>
+          : uploaded && BACKEND === 'api' && <a className="button-link" href={apiUrl(`/jobs/${uploaded.jobId}/download`)}>↓ Download NPZ</a>}
         {uploaded ? <button onClick={() => setUploaded(null)}>← Back to sequence</button>
           : <span className="session-note">Each window keeps its own frame, speed, and playback state.</span>}
       </div>
