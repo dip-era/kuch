@@ -235,6 +235,7 @@ export default function App() {
   const [frames, setFrames] = useState({})
   const [loadingByViewer, setLoadingByViewer] = useState(() => viewerMap(true))
   const [windowState, setWindowState] = useState(initialWindowState)
+  const [featuredViewerId, setFeaturedViewerId] = useState('semantic')
   const [error, setError] = useState('')
   const [uploaded, setUploaded] = useState(null)
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -338,7 +339,12 @@ export default function App() {
   }))
 
   const frameCount = dataset?.frameIds.length ?? 0
-  const semanticFrame = frames.semantic?.meta ?? {}
+  const featuredViewer = viewerById[featuredViewerId] ?? viewerById.semantic
+  const featuredFrameData = frames[featuredViewer.id]
+  const featuredFrame = featuredFrameData?.meta ?? {}
+  const featuredRendered = featuredViewer.kind === 'points'
+    ? number(Math.round((featuredFrameData?.points?.length ?? 0) / 4))
+    : number(featuredFrameData?.grid?.length ?? 0)
   const activeViewerCount = VIEWER_IDS.filter(id => windowState[id].playing).length
 
   const toggleClass = id => setHiddenClasses(previous => {
@@ -394,6 +400,12 @@ export default function App() {
     <div className="session-bar">
       <div><span className="eyebrow">ACTIVE SOURCE</span><strong>{uploaded ? uploaded.filename : 'PointMatrix / Recorded sequence'}</strong>
         <span className="source-chip">{uploaded ? 'USER UPLOAD' : `${number(frameCount)} FRAMES`}</span></div>
+      <div className="session-picker">
+        <label className="field-label" htmlFor="featured-viewer">Large panel</label>
+        <select id="featured-viewer" value={featuredViewerId} onChange={e => setFeaturedViewerId(e.target.value)}>
+          {VIEWERS.map(viewer => <option key={viewer.id} value={viewer.id}>{viewer.title}</option>)}
+        </select>
+      </div>
       <div className="session-actions">
         {uploaded?.frameUrl
           ? <a className="button-link" href={uploaded.frameUrl} download>↓ Download frame (.lgf.gz)</a>
@@ -411,7 +423,7 @@ export default function App() {
         <section className="dashboard-layout">
           {renderViewer(VIEWERS.find(({ id }) => id === 'raw'), 'layout-panel viewer-card--secondary layout-raw')}
           {renderViewer(VIEWERS.find(({ id }) => id === 'segmentation'), 'layout-panel viewer-card--secondary layout-segmentation')}
-          {renderViewer(VIEWERS.find(({ id }) => id === 'semantic'), 'layout-panel viewer-card--featured layout-semantic')}
+          {renderViewer(featuredViewer, 'layout-panel viewer-card--featured layout-semantic')}
           {renderViewer(VIEWERS.find(({ id }) => id === 'elevation'), 'layout-panel viewer-card--secondary layout-elevation')}
           {renderViewer(VIEWERS.find(({ id }) => id === 'drivability'), 'layout-panel viewer-card--secondary layout-drivability')}
           {renderViewer(VIEWERS.find(({ id }) => id === 'resolution'), 'layout-panel viewer-card--secondary layout-resolution')}
@@ -420,10 +432,11 @@ export default function App() {
             <div className="control-card control-card-compact">
               <span className="eyebrow">SYSTEM METRICS</span>
               <h2>Sequence summary</h2>
-              <Row label="Frame" value={frameCount ? `${windowState.semantic.frameIndex + 1} / ${number(frameCount)}` : '0 / 0'} />
-              <Row label="Semantic cells" value={number(semanticFrame.final_cells ?? semanticFrame.output_cells ?? 0)} />
-              <Row label="Input points" value={number(semanticFrame.total_input_points)} />
-              <Row label="End-to-end" value={ms(semanticFrame.total_ms)} />
+              <Row label="Large panel" value={featuredViewer.title} />
+              <Row label="Frame" value={frameCount ? `${windowState[featuredViewer.id].frameIndex + 1} / ${number(frameCount)}` : '0 / 0'} />
+              <Row label={featuredViewer.kind === 'points' ? 'Rendered points' : 'Displayed cells'} value={featuredRendered} />
+              <Row label="Input points" value={number(featuredFrame.total_input_points)} />
+              <Row label="End-to-end" value={ms(featuredFrame.total_ms)} />
               <Row label="Playing windows" value={`${activeViewerCount} / ${VIEWERS.length}`} />
             </div>
 
