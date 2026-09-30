@@ -71,6 +71,21 @@ function PlaybackStrip({ disabled, frameIndex, frameCount, playing, speed, onSte
   </div>
 }
 
+function ZoomStrip({ zoom, onChange, disabled = false }) {
+  return <div className="viewer-zoom">
+    <label htmlFor={`zoom-${Math.round(zoom * 100)}`}>Zoom</label>
+    <button aria-label="Zoom out" disabled={disabled || zoom <= .5}
+      onClick={() => onChange(Math.max(.5, Math.round(zoom / 1.25 * 100) / 100))}>−</button>
+    <input id={`zoom-${Math.round(zoom * 100)}`} type="range" min="50" max="800" step="1"
+      value={Math.round(zoom * 100)} disabled={disabled}
+      aria-valuetext={`${Math.round(zoom * 100)} percent`}
+      onChange={e => onChange(Number(e.target.value) / 100)} />
+    <button aria-label="Zoom in" disabled={disabled || zoom >= 8}
+      onClick={() => onChange(Math.min(8, Math.round(zoom * 1.25 * 100) / 100))}>+</button>
+    <output htmlFor={`zoom-${Math.round(zoom * 100)}`}>{Math.round(zoom * 100)}%</output>
+  </div>
+}
+
 function SelectionCard({ selected, drivabilityOptions, onClose }) {
   if (!selected) return null
   return <div className="cell-card viewer-cell-card">
@@ -129,11 +144,12 @@ function ViewerWindow({
     <div className="viewer-toolbar">
       {id === 'raw' ? <span className="viewer-toolbar-label">Height (Z)</span> : <ViewToggle value={state.topDown} onChange={setTopDown} />}
       <div className="viewer-actions">
-        {id !== 'raw' && <button onClick={resetView}>Reset view</button>}
+        <button onClick={resetView}>Reset view</button>
         <button onClick={captureView} disabled={!frame}>Capture</button>
         {id !== 'raw' && <button onClick={() => downloadJSON(frame, drivabilityOptions)} disabled={!frame}>Export JSON</button>}
       </div>
     </div>
+    <ZoomStrip zoom={state.zoom} onChange={setZoom} disabled={!frame} />
     <div className="viewer-stage">
       {id === 'raw'
         ? <PointCloud points={points} hiddenClasses={EMPTY} mode="height" topDown={false} view={view} pointSize={pointSize}
