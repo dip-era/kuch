@@ -1,4 +1,5 @@
 import { FRAME_MANIFEST_URL } from './config'
+import { cachedFetch } from './frameCache.js'
 import { frameUrl, loadLGFFrame, loadLGFManifest, normalizeLGFFrame } from './lgf'
 
 const LOCAL_FRAME_CACHE_LIMIT = 36
@@ -50,7 +51,7 @@ function normalizeLocalFrame(frameId, grid, points, meta) {
 }
 
 async function loadLocalFrames(manifestUrl, onProgress) {
-  const manifestResponse = await fetch(manifestUrl)
+  const manifestResponse = await cachedFetch(manifestUrl)
   if (!manifestResponse.ok) throw new Error('Could not load frame manifest')
   const manifest = await manifestResponse.json()
   const { frames } = manifest
@@ -72,9 +73,9 @@ async function loadLocalFrames(manifestUrl, onProgress) {
         ? frameAssetUrl(baseUrl, 'grid', frameId, 'bin')
         : frameAssetUrl(baseUrl, 'grid', frameId, 'json')
       const [gridResponse, pointsResponse, metaResponse] = await Promise.all([
-        fetch(gridUrl),
-        fetch(frameAssetUrl(baseUrl, 'points', frameId, 'bin')),
-        fetch(frameAssetUrl(baseUrl, 'meta', frameId, 'json')),
+        cachedFetch(gridUrl),
+        cachedFetch(frameAssetUrl(baseUrl, 'points', frameId, 'bin')),
+        cachedFetch(frameAssetUrl(baseUrl, 'meta', frameId, 'json')),
       ])
       if (![gridResponse, pointsResponse, metaResponse].every((response) => response.ok)) throw new Error(`Incomplete data for frame ${frameId}`)
       const [gridPayload, pointBuffer, meta] = await Promise.all([
@@ -198,7 +199,7 @@ async function loadLGFClipFrames(manifestUrl, onProgress) {
 }
 
 export async function loadFrames(onProgress, manifestUrl = FRAME_MANIFEST_URL) {
-  const response = await fetch(manifestUrl)
+  const response = await cachedFetch(manifestUrl)
   if (!response.ok) throw new Error('Could not load frame manifest')
   const manifest = await response.json()
   if (manifest?.format === 'LGF1-clip') return loadLGFClipFrames(manifestUrl, onProgress)

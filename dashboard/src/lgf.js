@@ -1,3 +1,5 @@
+import { cachedFetch } from './frameCache.js'
+
 const MAGIC = 'LGF1'
 
 function isGzip(buffer) {
@@ -183,13 +185,13 @@ export function liveFrameMeta(summary = {}) {
 }
 
 export async function loadLGFFrame(url, init) {
-  const response = await fetch(url, init)
+  const response = await cachedFetch(url, init)
   if (!response.ok) throw new Error(`LGF1: ${response.status} ${response.statusText} for ${url}`)
   return decodeFrame(await gunzipIfNeeded(await response.arrayBuffer()))
 }
 
 export async function loadLGFManifest(url) {
-  const response = await fetch(url)
+  const response = await cachedFetch(url)
   if (!response.ok) throw new Error(`Could not load frame manifest: ${response.status} ${response.statusText}`)
   const manifest = await response.json()
   return {
