@@ -2,8 +2,8 @@ import { FRAME_MANIFEST_URL } from './config'
 import { cachedFetch } from './frameCache.js'
 import { frameUrl, loadLGFFrame, loadLGFManifest, normalizeLGFFrame } from './lgf'
 
-const LOCAL_FRAME_CACHE_LIMIT = 36
-const LGF_FRAME_CACHE_LIMIT = 48
+const LOCAL_FRAME_CACHE_LIMIT = 160
+const LGF_FRAME_CACHE_LIMIT = 192
 const CLIP_DISPLAY_POINTS = 40_000
 const PRELOAD_CONCURRENCY = 2
 
@@ -59,23 +59,24 @@ async function loadLocalFrames(manifestUrl, onProgress) {
 
   const loaded = new Map()
   const pending = new Map()
-  let retainAll = false
   let preloadChain = Promise.resolve()
   const gridFormat = manifest.grid_format ?? 'json'
   const gridFields = manifest.grid_fields ?? GRID_FIELDS
   const baseUrl = manifestBaseUrl(manifestUrl)
 
+  const frameAssets = (frameId) => {
+    const gridUrl = gridFormat === 'binary'
+      ? frameAssetUrl(baseUrl, 'grid', frameId, 'bin')
+      : frameAssetUrl(baseUrl, 'grid', frameId, 'json')
+    return [gridUrl, frameAssetUrl(baseUrl, 'points', frameId, 'bin'), frameAssetUrl(baseUrl, 'meta', frameId, 'json')]
+  }
+
   const loadFrame = (frameId) => {
     if (loaded.has(frameId)) return Promise.resolve(loaded.get(frameId))
     if (pending.has(frameId)) return pending.get(frameId)
     const request = (async () => {
-      const gridUrl = gridFormat === 'binary'
-        ? frameAssetUrl(baseUrl, 'grid', frameId, 'bin')
-        : frameAssetUrl(baseUrl, 'grid', frameId, 'json')
       const [gridResponse, pointsResponse, metaResponse] = await Promise.all([
-        cachedFetch(gridUrl),
-        cachedFetch(frameAssetUrl(baseUrl, 'points', frameId, 'bin')),
-        cachedFetch(frameAssetUrl(baseUrl, 'meta', frameId, 'json')),
+        ...frameAssets(frameId).map(url => cachedFetch(url)),
       ])
       if (![gridResponse, pointsResponse, metaResponse].every((response) => response.ok)) throw new Error(`Incomplete data for frame ${frameId}`)
       const [gridPayload, pointBuffer, meta] = await Promise.all([
@@ -86,7 +87,7 @@ async function loadLocalFrames(manifestUrl, onProgress) {
       const frame = normalizeLocalFrame(frameId, grid, pointBuffer, meta)
       loaded.set(frameId, frame)
       pending.delete(frameId)
-      if (!retainAll) trimCache(loaded, LOCAL_FRAME_CACHE_LIMIT)
+      trimCache(loaded, LOCAL_FRAME_CACHE_LIMIT)
       return frame
     })().catch((error) => { pending.delete(frameId); throw error })
     pending.set(frameId, request)
@@ -94,7 +95,6 @@ async function loadLocalFrames(manifestUrl, onProgress) {
   }
 
   const preloadTo = (targetCount, onPreloadProgress) => {
-    retainAll = true
     const total = frames.length
     const desired = Math.max(1, Math.min(total, targetCount))
     const run = async () => {
@@ -117,6 +117,25 @@ async function loadLocalFrames(manifestUrl, onProgress) {
     return preloadChain
   }
 
+  const warmAssetCache = (onPreloadProgress) => {
+    const total = frames.length
+    const run = async () => {
+      let completed = 0
+      onPreloadProgress?.(completed, total)
+      for (let index = 0; index < frames.length; index += PRELOAD_CONCURRENCY) {
+        const batch = frames.slice(index, index + PRELOAD_CONCURRENCY)
+        await Promise.all(batch.map(async (frameId) => {
+          await Promise.all(frameAssets(frameId).map(url => cachedFetch(url)))
+          completed += 1
+          onPreloadProgress?.(completed, total)
+        }))
+        await yieldToBrowser()
+      }
+    }
+    preloadChain = preloadChain.then(run)
+    return preloadChain
+  }
+
   onProgress?.(0, 1)
   await loadFrame(frames[0])
   onProgress?.(1, 1)
@@ -127,7 +146,7 @@ async function loadLocalFrames(manifestUrl, onProgress) {
     hasFrame: frameId => loaded.has(frameId),
     loadFrame,
     preloadTo,
-    preloadAll: onPreloadProgress => preloadTo(frames.length, onPreloadProgress),
+    warmAssetCache,
     semanticClasses: manifest.semantic_classes ?? [],
   }
 }
@@ -138,10 +157,14 @@ async function loadLGFClipFrames(manifestUrl, onProgress) {
 
   const loaded = new Map()
   const pending = new Map()
-  let retainAll = false
   let preloadChain = Promise.resolve()
   const frameIds = manifest.frames.map((frame) => frame.id)
   const frameIndexes = new Map(manifest.frames.map((frame, index) => [frame.id, index]))
+  const frameAssets = (frameId) => {
+    const index = frameIndexes.get(frameId)
+    if (index == null) throw new Error(`Unknown frame ${frameId}`)
+    return [frameUrl(manifest, index, 'lite')]
+  }
 
   const loadFrame = (frameId) => {
     if (loaded.has(frameId)) return Promise.resolve(loaded.get(frameId))
@@ -152,7 +175,7 @@ async function loadLGFClipFrames(manifestUrl, onProgress) {
       const frame = normalizeLGFFrame(await loadLGFFrame(frameUrl(manifest, index, 'lite')), { maxPoints: CLIP_DISPLAY_POINTS })
       loaded.set(frameId, frame)
       pending.delete(frameId)
-      if (!retainAll) trimCache(loaded, LGF_FRAME_CACHE_LIMIT)
+      trimCache(loaded, LGF_FRAME_CACHE_LIMIT)
       return frame
     })().catch((error) => { pending.delete(frameId); throw error })
     pending.set(frameId, request)
@@ -160,7 +183,6 @@ async function loadLGFClipFrames(manifestUrl, onProgress) {
   }
 
   const preloadTo = (targetCount, onPreloadProgress) => {
-    retainAll = true
     const total = frameIds.length
     const desired = Math.max(1, Math.min(total, targetCount))
     const run = async () => {
@@ -183,6 +205,25 @@ async function loadLGFClipFrames(manifestUrl, onProgress) {
     return preloadChain
   }
 
+  const warmAssetCache = (onPreloadProgress) => {
+    const total = frameIds.length
+    const run = async () => {
+      let completed = 0
+      onPreloadProgress?.(completed, total)
+      for (let index = 0; index < frameIds.length; index += PRELOAD_CONCURRENCY) {
+        const batch = frameIds.slice(index, index + PRELOAD_CONCURRENCY)
+        await Promise.all(batch.map(async (frameId) => {
+          await Promise.all(frameAssets(frameId).map(url => cachedFetch(url)))
+          completed += 1
+          onPreloadProgress?.(completed, total)
+        }))
+        await yieldToBrowser()
+      }
+    }
+    preloadChain = preloadChain.then(run)
+    return preloadChain
+  }
+
   onProgress?.(0, 1)
   await loadFrame(frameIds[0])
   onProgress?.(1, 1)
@@ -193,7 +234,7 @@ async function loadLGFClipFrames(manifestUrl, onProgress) {
     hasFrame: frameId => loaded.has(frameId),
     loadFrame,
     preloadTo,
-    preloadAll: onPreloadProgress => preloadTo(frameIds.length, onPreloadProgress),
+    warmAssetCache,
     semanticClasses: manifest.classes ?? [],
   }
 }

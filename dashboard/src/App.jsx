@@ -56,7 +56,7 @@ function initialWindowState() {
   return viewerMap(viewer => ({
     frameIndex: 0,
     playing: false,
-    speed: 8,
+    speed: 1,
     topDown: viewer.defaultTopDown ?? false,
     zoom: viewer.defaultZoom ?? DEFAULT_ZOOM,
     reset: 0,
@@ -160,8 +160,6 @@ function PlaybackStrip({ disabled, frameIndex, frameCount, playing, speed, onSte
       <option value={1}>1×</option>
       <option value={2}>2×</option>
       <option value={4}>4×</option>
-      <option value={6}>6×</option>
-      <option value={8}>8×</option>
     </select>
   </div>
 }
@@ -355,7 +353,7 @@ export default function App() {
   useEffect(() => {
     if (!dataset || !recordingWarmup.ready || recordingWarmup.complete) return
     let active = true
-    dataset.preloadAll?.((loaded, total) => {
+    dataset.warmAssetCache?.((loaded, total) => {
       if (!active) return
       setRecordingWarmup(previous => ({
         ...previous,
@@ -420,27 +418,19 @@ export default function App() {
             continue
           }
           const period = PLAYBACK_FRAME_MS / previous[id].speed
-          clock.carry[id] += delta
-          const desiredAdvance = Math.floor(clock.carry[id] / period)
-          if (!desiredAdvance) continue
+          clock.carry[id] = Math.min(clock.carry[id] + delta, period * 2)
+          if (clock.carry[id] < period) continue
 
-          let frameIndex = previous[id].frameIndex
-          let advanced = 0
-          while (advanced < desiredAdvance) {
-            const candidate = (frameIndex + 1) % frameCount
-            const frameId = frameIds[candidate]
-            if (!dataset.hasFrame?.(frameId)) break
-            frameIndex = candidate
-            advanced += 1
-          }
-
-          if (!advanced) {
-            clock.carry[id] = Math.min(clock.carry[id], period)
+          const candidate = (previous[id].frameIndex + 1) % frameCount
+          const frameId = frameIds[candidate]
+          if (!dataset.hasFrame?.(frameId)) {
+            dataset.loadFrame(frameId).catch(() => {})
+            clock.carry[id] = period
             continue
           }
 
-          clock.carry[id] = Math.min(clock.carry[id] - advanced * period, period)
-          next[id] = { ...previous[id], frameIndex }
+          clock.carry[id] -= period
+          next[id] = { ...previous[id], frameIndex: candidate }
           changed = true
         }
         return changed ? next : previous
@@ -452,7 +442,7 @@ export default function App() {
   }, [dataset, uploaded, playbackSignature, recordingWarmup.ready])
 
   useEffect(() => {
-    if (!dataset || uploaded || recordingWarmup.ready) return
+    if (!dataset || uploaded || !recordingWarmup.ready) return
     const count = dataset.frameIds.length
     for (const { id } of VIEWERS) {
       const center = windowState[id].frameIndex
