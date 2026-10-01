@@ -6,6 +6,7 @@ import { Vector3 } from 'three'
 export default function SceneCamera({ view, topDown, reset = 0, inset = 0, zoom = 1, onZoomChange }) {
   const camera = useRef(), controls = useRef()
   const fittedZoom = useRef(1), zoomValue = useRef(zoom), updating = useRef(false)
+  const offsetValue = useRef(null), previousTopDown = useRef(topDown), previousReset = useRef(reset)
   const { size, invalidate, camera: activeCamera } = useThree()
   useLayoutEffect(() => {
     zoomValue.current = zoom
@@ -22,7 +23,10 @@ export default function SceneCamera({ view, topDown, reset = 0, inset = 0, zoom 
     const span = Math.max(view.width, view.depth)
     const height = topDown ? view.base : (view.low + view.high) / 2
     const target = new Vector3(view.x, height, -view.y)
-    cam.position.copy(target).add(new Vector3(topDown ? 0 : span * .75, span, topDown ? .001 : span * .85))
+    const defaultOffset = new Vector3(topDown ? 0 : span * .75, span, topDown ? .001 : span * .85)
+    const preserveManualView = offsetValue.current && previousTopDown.current === topDown && previousReset.current === reset
+    const offset = preserveManualView ? offsetValue.current.clone() : defaultOffset
+    cam.position.copy(target).add(offset)
     cam.lookAt(target)
     cam.updateMatrixWorld()
     let extentX = 0, extentY = 0
@@ -46,6 +50,9 @@ export default function SceneCamera({ view, topDown, reset = 0, inset = 0, zoom 
       controls.current.target.copy(target)
       controls.current.update()
     }
+    offsetValue.current = cam.position.clone().sub(target)
+    previousTopDown.current = topDown
+    previousReset.current = reset
     updating.current = false
     invalidate()
   }, [view, topDown, reset, size.width, size.height, inset, invalidate, activeCamera, onZoomChange])
@@ -59,6 +66,7 @@ export default function SceneCamera({ view, topDown, reset = 0, inset = 0, zoom 
           zoomValue.current = next
           onZoomChange(next)
         }
+        offsetValue.current = camera.current.position.clone().sub(controls.current.target)
       }}
       minZoom={.01} maxZoom={400} maxPolarAngle={Math.PI / 2.02} />
   </>

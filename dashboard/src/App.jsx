@@ -25,8 +25,10 @@ const viewerById = Object.fromEntries(VIEWERS.map((viewer) => [viewer.id, viewer
 
 const DEFAULT_ZOOM = 2
 const PLAYBACK_FRAME_MS = 80
-const PREFETCH_AHEAD = 6
-const PREFETCH_BEHIND = 2
+const INITIAL_RECORDING_BUFFER = 96
+const PREFETCH_AHEAD = 16
+const PREFETCH_BEHIND = 4
+const MAX_PREFETCH_AHEAD = 32
 const RESOLUTION_LEGEND = [
   { label: '6.25 cm', resolution: 0.0625 },
   { label: '12.5 cm', resolution: 0.125 },
@@ -35,6 +37,20 @@ const RESOLUTION_LEGEND = [
 ]
 const number = value => Number(value ?? 0).toLocaleString()
 const ms = value => value == null ? 'Not recorded' : `${value.toFixed(1)} ms`
+
+function viewerMetrics(viewer, frameData, state, frameCount) {
+  const meta = frameData?.meta ?? {}
+  return {
+    id: viewer.id,
+    title: viewer.title,
+    frame: frameCount ? `${state.frameIndex + 1} / ${number(frameCount)}` : '0 / 0',
+    renderedLabel: viewer.kind === 'points' ? 'Rendered points' : 'Displayed cells',
+    renderedValue: number(viewer.kind === 'points' ? Math.round((frameData?.points?.length ?? 0) / 4) : frameData?.grid?.length ?? 0),
+    inputPoints: number(meta.total_input_points),
+    latency: ms(meta.total_ms),
+    playback: state.playing ? `${state.speed}× live` : 'Paused',
+  }
+}
 
 function initialWindowState() {
   return viewerMap(viewer => ({
@@ -70,6 +86,49 @@ function LandingFeature({ eyebrow, title, copy }) {
     <h3>{title}</h3>
     <p>{copy}</p>
   </article>
+}
+
+function SystemMetricsPanel({ items, featuredViewer, activeViewerCount, frameCount, sourceLabel }) {
+  return <div className="control-card system-metrics-card">
+    <span className="eyebrow">SYSTEM METRICS</span>
+    <div className="system-metrics-heading">
+      <h2>System metrics</h2>
+      <p>Live telemetry for every viewport is consolidated here on the right rail.</p>
+    </div>
+    <div className="system-metrics-summary">
+      <div className="system-metric-highlight">
+        <span>Large panel</span>
+        <strong>{featuredViewer.title}</strong>
+      </div>
+      <div className="system-metric-highlight">
+        <span>Playing windows</span>
+        <strong>{activeViewerCount} / {items.length}</strong>
+      </div>
+      <div className="system-metric-highlight">
+        <span>Total frames</span>
+        <strong>{number(frameCount)}</strong>
+      </div>
+      <div className="system-metric-highlight">
+        <span>Source</span>
+        <strong>{sourceLabel}</strong>
+      </div>
+    </div>
+    <div className="system-metrics-grid">
+      {items.map((item) => <section key={item.id} className="system-metric-panel">
+        <header>
+          <div>
+            <span className="eyebrow">{item.id.toUpperCase()}</span>
+            <strong>{item.title}</strong>
+          </div>
+          <span className={`system-metric-status ${item.playback === 'Paused' ? 'is-paused' : ''}`}>{item.playback}</span>
+        </header>
+        <Row label="Frame" value={item.frame} />
+        <Row label={item.renderedLabel} value={item.renderedValue} />
+        <Row label="Input points" value={item.inputPoints} />
+        <Row label="Latency" value={item.latency} />
+      </section>)}
+    </div>
+  </div>
 }
 
 function downloadJSON(frame, options) {
@@ -147,32 +206,15 @@ function ViewerWindow({
   const captureRef = useRef(null)
   const meta = frame?.meta ?? {}
   const sourceCells = frame?.grid ?? EMPTY_CELLS
-  const { grid: drivabilityCells, area: drivabilityArea } = useMemo(() => classifyGrid(sourceCells, drivabilityOptions), [sourceCells, drivabilityOptions])
+  const { grid: drivabilityCells } = useMemo(() => classifyGrid(sourceCells, drivabilityOptions), [sourceCells, drivabilityOptions])
   const points = frame?.points ?? new Float32Array()
   const view = useMemo(() => createView(sourceCells, detail, points), [sourceCells, detail, points])
   const ego = useMemo(() => showEgo ? egoPosition(sourceCells) : null, [sourceCells, showEgo])
-  const retained = sourceCells.reduce((sum, cell) => sum + cell.point_count, 0)
   const isPointViewer = kind === 'points'
   const mapCells = mode === 'drivability' ? drivabilityCells : sourceCells
   const featured = id === 'semantic'
   const semanticLegend = id === 'semantic'
   const allowExport = id === 'semantic' || id === 'drivability'
-  const metrics = featured
-    ? [
-        ['Input points', number(meta.total_input_points)],
-        [isPointViewer ? 'Rendered points' : 'Rendered', number(isPointViewer ? Math.round(points.length / 4) : meta.exported_points)],
-        [isPointViewer ? 'Adaptive cells' : 'Displayed cells', number(mapCells.length)],
-        ['End-to-end', ms(meta.total_ms)],
-        ...(mode === 'drivability' ? [['Drivable area', `${drivabilityArea.drivable.toFixed(1)} m²`]] : []),
-        ...(mode === 'semantic' && !isPointViewer
-          ? [['Retained points', `${meta.total_input_points ? (retained / meta.total_input_points * 100).toFixed(2) : '0.00'}%`]]
-          : []),
-      ]
-    : [
-        [isPointViewer ? 'Rendered points' : 'Displayed cells', number(isPointViewer ? Math.round(points.length / 4) : mapCells.length)],
-        [mode === 'drivability' ? 'Drivable area' : 'Input points', mode === 'drivability' ? `${drivabilityArea.drivable.toFixed(1)} m²` : number(meta.total_input_points)],
-        ['Latency', ms(meta.total_ms)],
-      ]
 
   const captureView = async () => {
     if (!captureRef.current || !frame) return
@@ -237,9 +279,6 @@ function ViewerWindow({
       {!isPointViewer && <SelectionCard selected={state.selected} drivabilityOptions={drivabilityOptions} onClose={() => setSelected(null)} />}
       {featured && <div className="viewer-note">{uploaded ? meta.method : note}</div>}
     </div>
-    <div className="viewer-metrics">
-      {metrics.map(([label, value]) => <Row key={label} label={label} value={value} />)}
-    </div>
     <PlaybackStrip disabled={disabled} frameIndex={state.frameIndex} frameCount={frameCount} playing={state.playing}
       speed={state.speed} onStep={step} onToggle={togglePlaying} onScrub={scrub} onSpeed={setSpeed} />
   </section>
@@ -249,6 +288,7 @@ export default function App() {
   const [dataset, setDataset] = useState(null)
   const [frames, setFrames] = useState({})
   const [loadingByViewer, setLoadingByViewer] = useState(() => viewerMap(true))
+  const [recordingWarmup, setRecordingWarmup] = useState(() => ({ phase: 'manifest', loaded: 0, total: 0, ready: false, complete: false }))
   const [windowState, setWindowState] = useState(initialWindowState)
   const [featuredViewerId, setFeaturedViewerId] = useState('semantic')
   const [showLanding, setShowLanding] = useState(true)
@@ -272,10 +312,66 @@ export default function App() {
 
   useEffect(() => {
     let active = true
-    loadFrames().then(result => { if (active) setDataset(result) })
+    loadFrames().then(result => {
+      if (!active) return
+      setDataset(result)
+      setRecordingWarmup({ phase: 'hydrating', loaded: result.frames?.size ?? 0, total: result.frameIds.length, ready: false, complete: false })
+    })
       .catch(nextError => { if (active) { setError(nextError.message); setLoadingByViewer(viewerMap(false)) } })
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    if (!dataset) return
+    let active = true
+    dataset.preloadTo?.(INITIAL_RECORDING_BUFFER, (loaded, total) => {
+      if (!active) return
+      setRecordingWarmup(previous => ({
+        ...previous,
+        phase: 'hydrating',
+        loaded,
+        total,
+        ready: loaded >= Math.min(total, INITIAL_RECORDING_BUFFER),
+        complete: loaded >= total,
+      }))
+    }).then(() => {
+      if (!active) return
+      setRecordingWarmup(previous => ({
+        ...previous,
+        phase: 'buffered',
+        loaded: Math.max(previous.loaded, Math.min(dataset.frameIds.length, INITIAL_RECORDING_BUFFER)),
+        total: dataset.frameIds.length,
+        ready: true,
+      }))
+      setLoadingByViewer(viewerMap(false))
+      setError('')
+    }).catch(nextError => {
+      if (!active) return
+      setError(nextError.message)
+    })
+    return () => { active = false }
+  }, [dataset])
+
+  useEffect(() => {
+    if (!dataset || !recordingWarmup.ready || recordingWarmup.complete) return
+    let active = true
+    dataset.preloadAll?.((loaded, total) => {
+      if (!active) return
+      setRecordingWarmup(previous => ({
+        ...previous,
+        phase: loaded >= total ? 'ready' : 'background',
+        loaded,
+        total,
+        ready: true,
+        complete: loaded >= total,
+      }))
+    }).then(() => {
+      if (!active) return
+      const total = dataset.frameIds.length
+      setRecordingWarmup(previous => ({ ...previous, phase: 'ready', loaded: total, total, ready: true, complete: true }))
+    }).catch(() => {})
+    return () => { active = false }
+  }, [dataset, recordingWarmup.ready, recordingWarmup.complete])
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -288,32 +384,29 @@ export default function App() {
       setLoadingByViewer(viewerMap(false))
       return
     }
-    if (!dataset) return
-    let active = true
-    for (const { id } of VIEWERS) {
-      const frameId = dataset.frameIds[windowState[id].frameIndex]
-      setLoadingByViewer(previous => ({ ...previous, [id]: true }))
-      dataset.loadFrame(frameId).then(frame => {
-        if (!active) return
-        setFrames(previous => ({ ...previous, [id]: frame }))
-        setLoadingByViewer(previous => ({ ...previous, [id]: false }))
-        setError('')
-      }).catch(nextError => {
-        if (!active) return
-        setLoadingByViewer(previous => ({ ...previous, [id]: false }))
-        setWindowState(previous => ({ ...previous, [id]: { ...previous[id], playing: false } }))
-        setError(nextError.message)
-      })
-    }
-    return () => { active = false }
-  }, [dataset, uploaded, frameIndexSignature])
+    if (!dataset || !recordingWarmup.ready) return
+    setFrames(previous => {
+      let changed = false
+      const next = { ...previous }
+      for (const { id } of VIEWERS) {
+        const frame = dataset.getFrame?.(dataset.frameIds[windowState[id].frameIndex])
+        if (frame && previous[id] !== frame) {
+          next[id] = frame
+          changed = true
+        }
+      }
+      return changed ? next : previous
+    })
+    setLoadingByViewer(viewerMap(false))
+  }, [dataset, uploaded, frameIndexSignature, recordingWarmup.ready])
 
   useEffect(() => {
-    if (!dataset || uploaded) return
+    if (!dataset || uploaded || !recordingWarmup.ready) return
     playbackClock.current.last = 0
     playbackClock.current.carry = viewerMap(0)
     let rafId = 0
     const frameCount = dataset.frameIds.length
+    const frameIds = dataset.frameIds
     const tick = now => {
       const clock = playbackClock.current
       const delta = clock.last ? now - clock.last : 0
@@ -322,16 +415,32 @@ export default function App() {
         let changed = false
         const next = { ...previous }
         for (const { id } of VIEWERS) {
-          if (!previous[id].playing || loadingByViewer[id]) {
+          if (!previous[id].playing) {
             clock.carry[id] = 0
             continue
           }
           const period = PLAYBACK_FRAME_MS / previous[id].speed
           clock.carry[id] += delta
-          const advance = Math.floor(clock.carry[id] / period)
-          if (!advance) continue
-          clock.carry[id] -= advance * period
-          next[id] = { ...previous[id], frameIndex: (previous[id].frameIndex + advance) % frameCount }
+          const desiredAdvance = Math.floor(clock.carry[id] / period)
+          if (!desiredAdvance) continue
+
+          let frameIndex = previous[id].frameIndex
+          let advanced = 0
+          while (advanced < desiredAdvance) {
+            const candidate = (frameIndex + 1) % frameCount
+            const frameId = frameIds[candidate]
+            if (!dataset.hasFrame?.(frameId)) break
+            frameIndex = candidate
+            advanced += 1
+          }
+
+          if (!advanced) {
+            clock.carry[id] = Math.min(clock.carry[id], period)
+            continue
+          }
+
+          clock.carry[id] = Math.min(clock.carry[id] - advanced * period, period)
+          next[id] = { ...previous[id], frameIndex }
           changed = true
         }
         return changed ? next : previous
@@ -340,20 +449,21 @@ export default function App() {
     }
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
-  }, [dataset, uploaded, playbackSignature])
+  }, [dataset, uploaded, playbackSignature, recordingWarmup.ready])
 
   useEffect(() => {
-    if (!dataset || uploaded) return
+    if (!dataset || uploaded || recordingWarmup.ready) return
     const count = dataset.frameIds.length
     for (const { id } of VIEWERS) {
       const center = windowState[id].frameIndex
-      for (let offset = -PREFETCH_BEHIND; offset <= PREFETCH_AHEAD; offset += 1) {
+      const ahead = Math.min(MAX_PREFETCH_AHEAD, Math.max(PREFETCH_AHEAD, Math.ceil(windowState[id].speed * 4)))
+      for (let offset = -PREFETCH_BEHIND; offset <= ahead; offset += 1) {
         if (!offset) continue
         const nextIndex = (center + offset + count) % count
         dataset.loadFrame(dataset.frameIds[nextIndex]).catch(() => {})
       }
     }
-  }, [dataset, uploaded, frameIndexSignature])
+  }, [dataset, uploaded, playbackSignature])
 
   const updateViewerState = (id, update) => setWindowState(previous => ({
     ...previous,
@@ -362,12 +472,12 @@ export default function App() {
 
   const frameCount = dataset?.frameIds.length ?? 0
   const featuredViewer = viewerById[featuredViewerId] ?? viewerById.semantic
-  const featuredFrameData = frames[featuredViewer.id]
-  const featuredFrame = featuredFrameData?.meta ?? {}
-  const featuredRendered = featuredViewer.kind === 'points'
-    ? number(Math.round((featuredFrameData?.points?.length ?? 0) / 4))
-    : number(featuredFrameData?.grid?.length ?? 0)
   const activeViewerCount = VIEWER_IDS.filter(id => windowState[id].playing).length
+  const systemMetricItems = VIEWERS.map(viewer => viewerMetrics(viewer, frames[viewer.id], windowState[viewer.id], frameCount))
+  const sourceLabel = uploaded ? 'User upload' : 'Recorded sequence'
+  const waitingForRecordedClip = !uploaded && (!dataset || !recordingWarmup.ready)
+  const warmupPercent = recordingWarmup.total ? Math.round(recordingWarmup.loaded / recordingWarmup.total * 100) : 0
+  const backgroundCacheActive = !uploaded && recordingWarmup.ready && !recordingWarmup.complete
 
   if (showLanding) {
     return <main className="landing-shell">
@@ -500,7 +610,8 @@ export default function App() {
 
     <div className="session-bar">
       <div><span className="eyebrow">ACTIVE SOURCE</span><strong>{uploaded ? uploaded.filename : 'PointMatrix / Recorded sequence'}</strong>
-        <span className="source-chip">{uploaded ? 'USER UPLOAD' : `${number(frameCount)} FRAMES`}</span></div>
+        <span className="source-chip">{uploaded ? 'USER UPLOAD' : `${number(frameCount)} FRAMES`}</span>
+        {backgroundCacheActive && <span className="source-chip cache-chip">{warmupPercent}% CACHED</span>}</div>
       <div className="session-picker">
         <label className="field-label" htmlFor="featured-viewer">Large panel</label>
         <select id="featured-viewer" value={featuredViewerId} onChange={e => setFeaturedViewerId(e.target.value)}>
@@ -512,14 +623,25 @@ export default function App() {
           ? <a className="button-link" href={uploaded.frameUrl} download>↓ Download frame (.lgf.gz)</a>
           : uploaded && BACKEND === 'api' && <a className="button-link" href={apiUrl(`/jobs/${uploaded.jobId}/download`)}>↓ Download NPZ</a>}
         {uploaded ? <button onClick={() => setUploaded(null)}>← Back to sequence</button>
-          : <span className="session-note">Each window keeps its own frame, speed, zoom, and playback state.</span>}
+          : <span className="session-note">{backgroundCacheActive
+            ? `Playback is live. Background cache is still filling (${recordingWarmup.loaded} / ${recordingWarmup.total} frames).`
+            : 'Recorded playback starts from a local buffer and continues filling the cache in the background. Each window still keeps its own frame, speed, zoom, and play state.'}</span>}
       </div>
     </div>
 
     {error && <div role="alert" className="error-banner">{error}<button onClick={() => setError('')}>Dismiss</button></div>}
 
-    {!dataset && !uploaded ? <div className="loading-state"><div className="radar" /><h2>{error ? 'Frame data unavailable' : 'Loading spatial data'}</h2>
-      <p>{error ? 'You can still upload a new scan with the button above.' : 'Preparing independent playback windows...'}</p></div>
+    {waitingForRecordedClip ? <div className="loading-state"><div className="radar" />
+      <h2>{error ? 'Frame data unavailable' : dataset ? 'Hydrating recorded sequence' : 'Loading spatial data'}</h2>
+      <p>{error ? 'You can still upload a new scan with the button above.' : dataset
+        ? 'Loading the first local playback buffer so the dashboard opens quickly without waiting for all 1000 frames.'
+        : 'Preparing the recorded sequence manifest...'}</p>
+      {dataset && <div className="loading-progress">
+        <div><span>Local warmup</span><strong>{recordingWarmup.loaded} / {recordingWarmup.total} frames</strong></div>
+        <progress max={Math.max(1, recordingWarmup.total)} value={recordingWarmup.loaded} />
+        <small>{warmupPercent}% cached locally</small>
+      </div>}
+    </div>
       : <>
         <section className="dashboard-layout">
           {renderViewer(VIEWERS.find(({ id }) => id === 'raw'), 'layout-panel viewer-card--secondary layout-raw')}
@@ -530,16 +652,8 @@ export default function App() {
           {renderViewer(VIEWERS.find(({ id }) => id === 'resolution'), 'layout-panel viewer-card--secondary layout-resolution')}
 
           <aside className="sidebar-panels layout-sidebar">
-            <div className="control-card control-card-compact">
-              <span className="eyebrow">SYSTEM METRICS</span>
-              <h2>Sequence summary</h2>
-              <Row label="Large panel" value={featuredViewer.title} />
-              <Row label="Frame" value={frameCount ? `${windowState[featuredViewer.id].frameIndex + 1} / ${number(frameCount)}` : '0 / 0'} />
-              <Row label={featuredViewer.kind === 'points' ? 'Rendered points' : 'Displayed cells'} value={featuredRendered} />
-              <Row label="Input points" value={number(featuredFrame.total_input_points)} />
-              <Row label="End-to-end" value={ms(featuredFrame.total_ms)} />
-              <Row label="Playing windows" value={`${activeViewerCount} / ${VIEWERS.length}`} />
-            </div>
+            <SystemMetricsPanel items={systemMetricItems} featuredViewer={featuredViewer}
+              activeViewerCount={activeViewerCount} frameCount={frameCount} sourceLabel={sourceLabel} />
 
             <div className="control-card">
               <span className="eyebrow">LAYER CONTROLS</span>
