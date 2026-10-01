@@ -25,7 +25,7 @@ const viewerById = Object.fromEntries(VIEWERS.map((viewer) => [viewer.id, viewer
 
 const DEFAULT_ZOOM = 2
 const PLAYBACK_FRAME_MS = 80
-const INITIAL_RECORDING_BUFFER = 96
+const STARTUP_STREAM_BUFFER = 12
 const PREFETCH_AHEAD = 16
 const PREFETCH_BEHIND = 4
 const MAX_PREFETCH_AHEAD = 32
@@ -286,7 +286,7 @@ export default function App() {
   const [dataset, setDataset] = useState(null)
   const [frames, setFrames] = useState({})
   const [loadingByViewer, setLoadingByViewer] = useState(() => viewerMap(true))
-  const [recordingWarmup, setRecordingWarmup] = useState(() => ({ phase: 'manifest', loaded: 0, total: 0, ready: false, complete: false }))
+  const [recordingWarmup, setRecordingWarmup] = useState(() => ({ phase: 'manifest', loaded: 0, total: 0, ready: false }))
   const [windowState, setWindowState] = useState(initialWindowState)
   const [featuredViewerId, setFeaturedViewerId] = useState('semantic')
   const [showLanding, setShowLanding] = useState(true)
@@ -313,7 +313,9 @@ export default function App() {
     loadFrames().then(result => {
       if (!active) return
       setDataset(result)
-      setRecordingWarmup({ phase: 'hydrating', loaded: result.frames?.size ?? 0, total: result.frameIds.length, ready: false, complete: false })
+      setRecordingWarmup({ phase: 'ready', loaded: result.frames?.size ?? 0, total: result.frameIds.length, ready: true })
+      setLoadingByViewer(viewerMap(false))
+      setError('')
     })
       .catch(nextError => { if (active) { setError(nextError.message); setLoadingByViewer(viewerMap(false)) } })
     return () => { active = false }
@@ -322,54 +324,27 @@ export default function App() {
   useEffect(() => {
     if (!dataset) return
     let active = true
-    dataset.preloadTo?.(INITIAL_RECORDING_BUFFER, (loaded, total) => {
+    dataset.preloadTo?.(STARTUP_STREAM_BUFFER, (loaded, total) => {
       if (!active) return
       setRecordingWarmup(previous => ({
         ...previous,
-        phase: 'hydrating',
+        phase: loaded >= Math.min(total, STARTUP_STREAM_BUFFER) ? 'ready' : 'streaming',
         loaded,
         total,
-        ready: loaded >= Math.min(total, INITIAL_RECORDING_BUFFER),
-        complete: loaded >= total,
+        ready: true,
       }))
     }).then(() => {
       if (!active) return
       setRecordingWarmup(previous => ({
         ...previous,
-        phase: 'buffered',
-        loaded: Math.max(previous.loaded, Math.min(dataset.frameIds.length, INITIAL_RECORDING_BUFFER)),
+        phase: 'ready',
+        loaded: Math.max(previous.loaded, Math.min(dataset.frameIds.length, STARTUP_STREAM_BUFFER)),
         total: dataset.frameIds.length,
         ready: true,
       }))
-      setLoadingByViewer(viewerMap(false))
-      setError('')
-    }).catch(nextError => {
-      if (!active) return
-      setError(nextError.message)
-    })
-    return () => { active = false }
-  }, [dataset])
-
-  useEffect(() => {
-    if (!dataset || !recordingWarmup.ready || recordingWarmup.complete) return
-    let active = true
-    dataset.warmAssetCache?.((loaded, total) => {
-      if (!active) return
-      setRecordingWarmup(previous => ({
-        ...previous,
-        phase: loaded >= total ? 'ready' : 'background',
-        loaded,
-        total,
-        ready: true,
-        complete: loaded >= total,
-      }))
-    }).then(() => {
-      if (!active) return
-      const total = dataset.frameIds.length
-      setRecordingWarmup(previous => ({ ...previous, phase: 'ready', loaded: total, total, ready: true, complete: true }))
     }).catch(() => {})
     return () => { active = false }
-  }, [dataset, recordingWarmup.ready, recordingWarmup.complete])
+  }, [dataset])
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -382,7 +357,7 @@ export default function App() {
       setLoadingByViewer(viewerMap(false))
       return
     }
-    if (!dataset || !recordingWarmup.ready) return
+    if (!dataset) return
     setFrames(previous => {
       let changed = false
       const next = { ...previous }
@@ -396,10 +371,10 @@ export default function App() {
       return changed ? next : previous
     })
     setLoadingByViewer(viewerMap(false))
-  }, [dataset, uploaded, frameIndexSignature, recordingWarmup.ready])
+  }, [dataset, uploaded, frameIndexSignature])
 
   useEffect(() => {
-    if (!dataset || uploaded || !recordingWarmup.ready) return
+    if (!dataset || uploaded) return
     playbackClock.current.last = 0
     playbackClock.current.carry = viewerMap(0)
     let rafId = 0
@@ -439,14 +414,14 @@ export default function App() {
     }
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
-  }, [dataset, uploaded, playbackSignature, recordingWarmup.ready])
+  }, [dataset, uploaded, playbackSignature])
 
   useEffect(() => {
-    if (!dataset || uploaded || !recordingWarmup.ready) return
+    if (!dataset || uploaded) return
     const count = dataset.frameIds.length
     for (const { id } of VIEWERS) {
       const center = windowState[id].frameIndex
-      const ahead = Math.min(MAX_PREFETCH_AHEAD, Math.max(PREFETCH_AHEAD, Math.ceil(windowState[id].speed * 4)))
+      const ahead = Math.min(MAX_PREFETCH_AHEAD, Math.max(32, PREFETCH_AHEAD, Math.ceil(windowState[id].speed * 12)))
       for (let offset = -PREFETCH_BEHIND; offset <= ahead; offset += 1) {
         if (!offset) continue
         const nextIndex = (center + offset + count) % count
@@ -465,9 +440,10 @@ export default function App() {
   const activeViewerCount = VIEWER_IDS.filter(id => windowState[id].playing).length
   const systemMetricItems = VIEWERS.map(viewer => viewerMetrics(viewer, frames[viewer.id], windowState[viewer.id], frameCount))
   const sourceLabel = uploaded ? 'User upload' : 'Recorded sequence'
-  const waitingForRecordedClip = !uploaded && (!dataset || !recordingWarmup.ready)
-  const warmupPercent = recordingWarmup.total ? Math.round(recordingWarmup.loaded / recordingWarmup.total * 100) : 0
-  const backgroundCacheActive = !uploaded && recordingWarmup.ready && !recordingWarmup.complete
+  const waitingForRecordedClip = !uploaded && !dataset
+  const streamedFrameCount = uploaded ? 0 : Math.max(recordingWarmup.loaded, dataset?.frames?.size ?? 0)
+  const warmupPercent = frameCount ? Math.round(streamedFrameCount / frameCount * 100) : 0
+  const backgroundCacheActive = !uploaded && Boolean(dataset) && streamedFrameCount < frameCount
 
   if (showLanding) {
     return <main className="landing-shell">
@@ -601,7 +577,7 @@ export default function App() {
     <div className="session-bar">
       <div><span className="eyebrow">ACTIVE SOURCE</span><strong>{uploaded ? uploaded.filename : 'PointMatrix / Recorded sequence'}</strong>
         <span className="source-chip">{uploaded ? 'USER UPLOAD' : `${number(frameCount)} FRAMES`}</span>
-        {backgroundCacheActive && <span className="source-chip cache-chip">{warmupPercent}% CACHED</span>}</div>
+        {backgroundCacheActive && <span className="source-chip cache-chip">{warmupPercent}% STREAMED</span>}</div>
       <div className="session-picker">
         <label className="field-label" htmlFor="featured-viewer">Large panel</label>
         <select id="featured-viewer" value={featuredViewerId} onChange={e => setFeaturedViewerId(e.target.value)}>
@@ -614,23 +590,16 @@ export default function App() {
           : uploaded && BACKEND === 'api' && <a className="button-link" href={apiUrl(`/jobs/${uploaded.jobId}/download`)}>↓ Download NPZ</a>}
         {uploaded ? <button onClick={() => setUploaded(null)}>← Back to sequence</button>
           : <span className="session-note">{backgroundCacheActive
-            ? `Playback is live. Background cache is still filling (${recordingWarmup.loaded} / ${recordingWarmup.total} frames).`
-            : 'Recorded playback starts from a local buffer and continues filling the cache in the background. Each window still keeps its own frame, speed, zoom, and play state.'}</span>}
+            ? `Playback starts immediately. Frames keep streaming in the background (${streamedFrameCount} / ${frameCount}).`
+            : 'Recorded playback opens on the first frame and fetches upcoming frames as needed. Each window still keeps its own frame, speed, zoom, and play state.'}</span>}
       </div>
     </div>
 
     {error && <div role="alert" className="error-banner">{error}<button onClick={() => setError('')}>Dismiss</button></div>}
 
     {waitingForRecordedClip ? <div className="loading-state"><div className="radar" />
-      <h2>{error ? 'Frame data unavailable' : dataset ? 'Hydrating recorded sequence' : 'Loading spatial data'}</h2>
-      <p>{error ? 'You can still upload a new scan with the button above.' : dataset
-        ? 'Loading the first local playback buffer so the dashboard opens quickly without waiting for all 1000 frames.'
-        : 'Preparing the recorded sequence manifest...'}</p>
-      {dataset && <div className="loading-progress">
-        <div><span>Local warmup</span><strong>{recordingWarmup.loaded} / {recordingWarmup.total} frames</strong></div>
-        <progress max={Math.max(1, recordingWarmup.total)} value={recordingWarmup.loaded} />
-        <small>{warmupPercent}% cached locally</small>
-      </div>}
+      <h2>{error ? 'Frame data unavailable' : 'Loading spatial data'}</h2>
+      <p>{error ? 'You can still upload a new scan with the button above.' : 'Preparing the recorded sequence manifest and first frame...'}</p>
     </div>
       : <>
         <section className="dashboard-layout">
