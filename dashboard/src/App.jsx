@@ -57,6 +57,21 @@ function ViewToggle({ value, onChange }) {
     <button className={value ? 'active' : ''} onClick={() => onChange(true)}>Top-down</button></div>
 }
 
+function LandingStat({ label, value }) {
+  return <div className="landing-stat">
+    <span>{label}</span>
+    <strong>{value}</strong>
+  </div>
+}
+
+function LandingFeature({ eyebrow, title, copy }) {
+  return <article className="landing-feature">
+    <span className="eyebrow">{eyebrow}</span>
+    <h3>{title}</h3>
+    <p>{copy}</p>
+  </article>
+}
+
 function downloadJSON(frame, options) {
   const result = classifyGrid(frame.grid, options)
   const url = URL.createObjectURL(new Blob([JSON.stringify({
@@ -236,6 +251,8 @@ export default function App() {
   const [loadingByViewer, setLoadingByViewer] = useState(() => viewerMap(true))
   const [windowState, setWindowState] = useState(initialWindowState)
   const [featuredViewerId, setFeaturedViewerId] = useState('semantic')
+  const [showLanding, setShowLanding] = useState(true)
+  const [now, setNow] = useState(() => new Date())
   const [error, setError] = useState('')
   const [uploaded, setUploaded] = useState(null)
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -258,6 +275,11 @@ export default function App() {
     loadFrames().then(result => { if (active) setDataset(result) })
       .catch(nextError => { if (active) { setError(nextError.message); setLoadingByViewer(viewerMap(false)) } })
     return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -347,6 +369,74 @@ export default function App() {
     : number(featuredFrameData?.grid?.length ?? 0)
   const activeViewerCount = VIEWER_IDS.filter(id => windowState[id].playing).length
 
+  if (showLanding) {
+    return <main className="landing-shell">
+      <section className="landing-hero">
+        <div className="landing-orbit landing-orbit-a" />
+        <div className="landing-orbit landing-orbit-b" />
+        <div className="landing-gridline" />
+        <header className="landing-header">
+          <div className="brand-home">
+            <div className="brand-icon"><svg viewBox="0 0 40 40" fill="none"><path d="m20 4 16 9-16 9L4 13 20 4Zm-16 16 16 9 16-9M4 27l16 9 16-9" stroke="currentColor" strokeWidth="2" /><path d="m12 13 8-4 8 4-8 4-8-4Z" fill="currentColor" opacity=".4" /></svg></div>
+            <div className="brand-copy">
+              <strong>PointMatrix</strong>
+              <small>Tactical LiDAR Mapping Cockpit</small>
+            </div>
+          </div>
+          <div className="landing-header-meta">
+            <span className="status-badge status-live"><i className="status-dot" />System online</span>
+            <span className="header-chip clock-chip">{now.toLocaleTimeString('en-GB', { hour12: false })}</span>
+          </div>
+        </header>
+
+        <div className="landing-copy">
+          <span className="landing-kicker">Adaptive 2.5D Semantic Mapping</span>
+          <h1>Autonomous perception workspace built for rapid LiDAR inspection.</h1>
+          <p>
+            Launch into the full multi-window dashboard with synchronized raw points, semantic mapping,
+            drivability analysis, elevation, and adaptive resolution views in one tactical cockpit.
+          </p>
+          <div className="landing-actions">
+            <button className="primary landing-enter" onClick={() => setShowLanding(false)}>Enter Dashboard</button>
+            <button onClick={() => { setShowLanding(false); setUploadOpen(true) }} disabled={!UPLOADS_ENABLED}>Upload LiDAR</button>
+          </div>
+          <div className="landing-stats">
+            <LandingStat label="Views" value={String(VIEWERS.length)} />
+            <LandingStat label="Frames Loaded" value={dataset ? number(frameCount) : 'Loading'} />
+            <LandingStat label="Featured Mode" value={featuredViewer.title} />
+            <LandingStat label="Playback" value="Independent" />
+          </div>
+        </div>
+
+        <div className="landing-preview">
+          <div className="landing-preview-card landing-preview-main">
+            <span className="eyebrow">MAIN COCKPIT</span>
+            <strong>Semantic 2.5D Map</strong>
+            <p>Promote any viewer into the central panel, inspect cells, and switch between map modes live.</p>
+          </div>
+          <div className="landing-preview-stack">
+            <div className="landing-preview-card">
+              <span className="eyebrow">RAW POINTS</span>
+              <strong>LiDAR geometry</strong>
+              <p>Elevation-colored returns with tighter startup zoom for instant vehicle visibility.</p>
+            </div>
+            <div className="landing-preview-card">
+              <span className="eyebrow">ANALYTICS</span>
+              <strong>Resolution and drivability</strong>
+              <p>Adaptive grid resolution, terrain height, and traversability layers with continuous playback.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-features">
+        <LandingFeature eyebrow="MULTI-VIEW" title="Independent playback windows" copy="Each viewer keeps its own frame index, speed, zoom, and play state for side-by-side comparison." />
+        <LandingFeature eyebrow="OPERATOR FLOW" title="Large-panel switching" copy="Promote raw points, segmentation, elevation, drivability, or resolution into the main display from one control." />
+        <LandingFeature eyebrow="TACTICAL UI" title="Command-center visual language" copy="Dark HUD panels, telemetry chips, and premium cockpit styling aligned with the dashboard theme." />
+      </section>
+    </main>
+  }
+
   const toggleClass = id => setHiddenClasses(previous => {
     const next = new Set(previous)
     if (next.has(id)) next.delete(id)
@@ -388,13 +478,24 @@ export default function App() {
 
   return <main className="app-shell">
     <header className="topbar">
-      <div className="brand-icon"><svg viewBox="0 0 40 40" fill="none"><path d="m20 4 16 9-16 9L4 13 20 4Zm-16 16 16 9 16-9M4 27l16 9 16-9" stroke="currentColor" strokeWidth="2" /><path d="m12 13 8-4 8 4-8 4-8-4Z" fill="currentColor" opacity=".4" /></svg></div>
-      <h1>Point<span>Matrix</span></h1><div className="brand-divider" />
-      <p className="tagline">Adaptive 2.5D Semantic Mapping<span>INDEPENDENT VIEW WINDOWS</span></p>
-      <div className="topbar-right"><span className="status-badge"><i className="status-dot" />{uploaded ? 'Scan processed' : 'Dataset explorer'}</span>
+      <div className="brand-home">
+        <div className="brand-icon"><svg viewBox="0 0 40 40" fill="none"><path d="m20 4 16 9-16 9L4 13 20 4Zm-16 16 16 9 16-9M4 27l16 9 16-9" stroke="currentColor" strokeWidth="2" /><path d="m12 13 8-4 8 4-8 4-8-4Z" fill="currentColor" opacity=".4" /></svg></div>
+        <div className="brand-copy">
+          <strong>PointMatrix</strong>
+          <small>Tactical LiDAR Mapping Cockpit</small>
+        </div>
+      </div>
+      <div className="brand-divider" />
+      <p className="tagline">Adaptive 2.5D Semantic Mapping for Autonomous Navigation<span>INDEPENDENT PERCEPTION WORKSPACE</span></p>
+      <div className="topbar-right">
+        <span className="status-badge status-live"><i className="status-dot" />{uploaded ? 'Scan processed' : 'System online'}</span>
+        <span className="header-chip">Frame: {frameCount ? `${windowState[featuredViewer.id].frameIndex + 1} / ${number(frameCount)}` : '0 / 0'}</span>
+        <span className="header-chip">10 Hz</span>
+        <span className="header-chip clock-chip">{now.toLocaleTimeString('en-GB', { hour12: false })}</span>
         <button className="primary upload-trigger" onClick={() => setUploadOpen(true)} disabled={!UPLOADS_ENABLED}
           title={UPLOADS_ENABLED ? 'Upload a point cloud for processing' : 'Set VITE_HF_SPACE (or VITE_API_BASE_URL) to enable uploads'}>
-          <span>↑</span> Upload LiDAR</button></div>
+          <span>↑</span> Upload LiDAR</button>
+      </div>
     </header>
 
     <div className="session-bar">
